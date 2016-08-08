@@ -8,9 +8,9 @@ For more information regarding the MQTT protocol visit the http://mqtt.org websi
 Questions, bug reports, recommendations are highly welcome to Attila.Toth@InterSystems.com
 
 Installation
-- Download and extract the project to a directory (<install-dir>).
+- Download and extract the project to a directory (\<install-dir\>).
 - Import and compile all XML files onto one of your Caché / Ensemble namespaces, with the following command:
-  Do $System.OBJ.LoadDir("<install-dir>","c",.err,1,.list)
+  Do $System.OBJ.LoadDir("\<install-dir\>","c",.err,1,.list)
 
 Usage
 - For detailed information- including usage examples- look into the class documentation of Net.MQTT.Client

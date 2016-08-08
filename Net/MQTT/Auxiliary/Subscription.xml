@@ -1,0 +1,178 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Export generator="Cache" version="25" zv="Cache for Windows (x86-64) 2016.2 (Build 665U)" ts="2016-08-08 23:03:44">
+<Class name="Net.MQTT.Auxiliary.Subscription">
+<Description><![CDATA[
+Auxiliary class is used only internally by a <class>Net.MQTT.Client</class> and its <class>Net.MQTT.Agent</class> to keep track of 
+<b><var>SUBSCRIBE</var></b> and <b><var>UNSUBSCRIBE</var></b> message contents.
+<p>These messages must have a unique Message Idenfier among current in-flight messages (per Client), 
+ therefore all instances are dropped as soon as the corresponding message flow is completed.</p>]]></Description>
+<IncludeCode>MQTTOptions</IncludeCode>
+<Super>%Persistent</Super>
+<TimeChanged>64138,82815.465679</TimeChanged>
+<TimeCreated>64050,80453.857656</TimeCreated>
+
+<Index name="ClientKey">
+<Properties>ClientId,MessageId</Properties>
+<Unique>1</Unique>
+</Index>
+
+<Property name="ClientId">
+<Type>%String</Type>
+<Required>1</Required>
+<Parameter name="MAXLEN" value="23"/>
+</Property>
+
+<Property name="MessageId">
+<Type>%Integer</Type>
+<Required>1</Required>
+<Parameter name="MAXVAL" value="65653"/>
+<Parameter name="MINVAL" value="1"/>
+</Property>
+
+<Property name="Topics">
+<Type>Net.MQTT.Auxiliary.SubscriptionTopic</Type>
+<Cardinality>children</Cardinality>
+<Inverse>Subscription</Inverse>
+<Relationship>1</Relationship>
+</Property>
+
+<Method name="CreateSubscription">
+<ClassMethod>1</ClassMethod>
+<FormalSpec><![CDATA[pClientId:%String,pMessageId:%String,&pSC:%Status]]></FormalSpec>
+<ReturnType>Net.MQTT.Auxiliary.Subscription</ReturnType>
+<Implementation><![CDATA[
+	Set obj = ..%New()
+	Set obj.ClientId = pClientId
+	Set obj.MessageId = pMessageId
+	Set pSC = obj.%Save()
+	
+	Quit $Select($$$ISOK(pSC): obj, 1: "")
+]]></Implementation>
+</Method>
+
+<Method name="DropSubscription">
+<ClassMethod>1</ClassMethod>
+<CodeMode>expression</CodeMode>
+<FormalSpec>pId:%String</FormalSpec>
+<ReturnType>%Status</ReturnType>
+<Implementation><![CDATA[..%DeleteId(pId)
+]]></Implementation>
+</Method>
+
+<Method name="AddTopic">
+<FormalSpec>pTopic:Net.MQTT.Message</FormalSpec>
+<ReturnType>%Status</ReturnType>
+<Implementation><![CDATA[
+	Set obj = ##class(Net.MQTT.Auxiliary.SubscriptionTopic).%New()
+	Set obj.Topic = pTopic.Topic
+	Set obj.QoSLevel = pTopic.QoSLevel
+	Set tSC = ..Topics.Insert(obj)
+	Set:$$$ISOK(tSC) tSC = ..%Save()
+	
+	Quit tSC
+]]></Implementation>
+</Method>
+
+<Method name="GetTopicCount">
+<ClassMethod>1</ClassMethod>
+<FormalSpec><![CDATA[pClientId:%String,pMessageId:%String,&pSC:%Status]]></FormalSpec>
+<ReturnType>%Integer</ReturnType>
+<Implementation><![CDATA[
+	Set ret = ""
+	Set obj = ..ClientKeyOpen(pClientId, pMessageId, 0, .pSC)
+	If $$$ISOK(pSC) {
+		Set ret = obj.Topics.Count()
+	}
+	
+	Quit ret
+]]></Implementation>
+</Method>
+
+<Method name="GetTopicList">
+<ClassMethod>1</ClassMethod>
+<FormalSpec><![CDATA[pClientId:%String,pMessageId:%String,&pSC:%Status]]></FormalSpec>
+<ReturnType>%ListOfObjects</ReturnType>
+<ReturnTypeParams>ELEMENTTYPE="Net.MQTT.Message"</ReturnTypeParams>
+<Implementation><![CDATA[
+ 	Set ret = ##class(%ListOfObjects).%New()
+	Set obj = ..ClientKeyOpen(pClientId, pMessageId, -1, .pSC)
+	If $$$ISOK(pSC) {
+		For i = 1: 1: obj.Topics.Count() {
+			Set next = obj.Topics.GetAt(i)
+			
+			Set msg = ##class(Net.MQTT.Message).%New()
+			Set msg.Topic = next.Topic
+			Set msg.QoSLevel = next.QoSLevel
+			Set pSC = ret.Insert(msg)
+			Quit:$$$ISERR(pSC)
+		}
+	}
+ 	
+	Quit $Select($$$ISOK(pSC): ret, 1: "")
+]]></Implementation>
+</Method>
+
+<Method name="AckTopic">
+<ClassMethod>1</ClassMethod>
+<FormalSpec>pClientId:%String,pMessageId:%String,pTopicNr:%Integer,pGrantedQoS:%Integer</FormalSpec>
+<ReturnType>%Status</ReturnType>
+<Implementation><![CDATA[
+	Set obj = ..ClientKeyOpen(pClientId, pMessageId, -1, .tSC)
+	If $$$ISOK(tSC) {
+		If (pTopicNr < 1) || (pTopicNr > obj.Topics.Count()) {
+			Set tSC = $$$ERROR($$$GeneralError, "Inavlid topic number (" _ pTopicNr _ " is not between 1 and " _ obj.Topics.Count() _ ")")
+		}
+		Else {
+			Set topic = obj.Topics.GetAt(pTopicNr)
+			Set topic.GrantedQoS = pGrantedQoS
+			Set tSC = topic.%Save()
+		}
+	}
+	
+	Quit tSC
+]]></Implementation>
+</Method>
+
+<Method name="RetrieveAck">
+<FormalSpec><![CDATA[&pTopics:%ListOfObjects(ELEMENTTYPE="Net.MQTT.Message")]]></FormalSpec>
+<ReturnType>%Status</ReturnType>
+<Implementation><![CDATA[
+	Set tSC = ..%Reload()
+	If $$$ISOK(tSC) {
+		If pTopics.Count() '= ..Topics.Count() {
+			Set tSC = $$$ERROR($$$GeneralError, "Topic count mismatch (" _ pTopics.Count() _ " <> " _ ..Topics.Count() _ ")")
+		}
+		Else {
+			For i = 1: 1: pTopics.Count() {
+				Set pTopics.GetAt(i).GrantedQoS = ..Topics.GetAt(i).GrantedQoS
+			}
+		}
+	}
+	
+	Quit tSC
+]]></Implementation>
+</Method>
+
+<Storage name="Default">
+<Type>%Library.CacheStorage</Type>
+<DataLocation>^Net.MQTT.Auxil93C.SubscriptionD</DataLocation>
+<DefaultData>SubscriptionDefaultData</DefaultData>
+<IdLocation>^Net.MQTT.Auxil93C.SubscriptionD</IdLocation>
+<IndexLocation>^Net.MQTT.Auxil93C.SubscriptionI</IndexLocation>
+<StreamLocation>^Net.MQTT.Auxil93C.SubscriptionS</StreamLocation>
+<Data name="SubscriptionDefaultData">
+<Structure>listnode</Structure>
+<Subscript/>
+<Value name="1">
+<Value>%%CLASSNAME</Value>
+</Value>
+<Value name="2">
+<Value>ClientId</Value>
+</Value>
+<Value name="3">
+<Value>MessageId</Value>
+</Value>
+</Data>
+</Storage>
+</Class>
+</Export>

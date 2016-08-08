@@ -1,0 +1,109 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Export generator="Cache" version="25" zv="Cache for Windows (x86-64) 2016.2 (Build 665U)" ts="2016-08-08 23:03:44">
+<Class name="Net.MQTT.Auxiliary.MessageCounter">
+<Description><![CDATA[
+Auxiliary class to provide unique Message Identifiers for in-flight messages of a specific client connection.
+<p>MQTT standard only specifies that Message Identifiers must be unique among the currently in-flight messages.
+This class helps to initialize a new message sequence for each Client (<class>Net.MQTT.Client</class>) / Agent (<class>Net.MQTT.Agent</class>) pairs,
+ based on the <property>ClientId</property>. This also means that <property>ClientId</property> must be unique among parallel
+ Client instances currently running in the same database.</p>]]></Description>
+<Super>%Persistent</Super>
+<TimeChanged>64138,82668.950865</TimeChanged>
+<TimeCreated>64070,61478.847771</TimeCreated>
+
+<Index name="ClientKey">
+<IdKey>1</IdKey>
+<PrimaryKey>1</PrimaryKey>
+<Properties>ClientId</Properties>
+</Index>
+
+<Property name="ClientId">
+<Type>%String</Type>
+<Required>1</Required>
+</Property>
+
+<Property name="LastMessageId">
+<Type>%Integer</Type>
+<InitialExpression>0</InitialExpression>
+<Parameter name="MAXVAL" value="65535"/>
+<Parameter name="MINVAL" value="0"/>
+</Property>
+
+<Method name="CreateCounter">
+<Description><![CDATA[
+Used internally, by <class>Net.MQTT.Client</class> instances to create a new Message Identifier sequence.
+for a <property>ClientId</property> (which must be unqique among the currently running Clients). ]]></Description>
+<ClassMethod>1</ClassMethod>
+<FormalSpec>pClientId:%String</FormalSpec>
+<ReturnType>%Status</ReturnType>
+<Implementation><![CDATA[
+	Set tSC = ..%LockExtent(0)
+	TRY {
+		If ..%ExistsId(pClientId) {
+			Set tSC = $$$ERROR($$$GeneralError, "Client ID ('" _ pClientId _ "') is already used")
+		}
+		Else {
+			Set obj = ..%New()
+			Set obj.ClientId = pClientId
+			Set tSC = obj.%Save()
+		}
+	}
+	CATCH ex {
+		Set tSC = ex.AsStatus()
+	}
+	Do ..%UnlockExtent()
+	Quit tSC
+]]></Implementation>
+</Method>
+
+<Method name="NextMessageId">
+<Description><![CDATA[
+Used internally, by <class>Net.MQTT.Client</class> instances.
+<p>Returns the next available Message Idenfier for a specific <property>ClientId</property>.</p>
+<p>Currently MQTT Message Identifiers must fall between 1 and 65535. After 65535 the counter simply turns into 1 again,
+simply assuming that this cannot lead to a collision among current in-flight messages.</p>]]></Description>
+<ClassMethod>1</ClassMethod>
+<FormalSpec><![CDATA[pClientId:%String,&pSC:%Status]]></FormalSpec>
+<ReturnType>%Integer</ReturnType>
+<Implementation><![CDATA[
+	Set obj = ..%OpenId(pClientId, 4, .pSC)
+	If $$$ISOK(pSC) {
+		Set obj.LastMessageId = $Case(obj.LastMessageId, 65535: 1, : obj.LastMessageId + 1)
+		Set pSC = obj.%Save()
+	}
+	Quit $Select($$$ISOK(pSC): obj.LastMessageId, 1: "")
+]]></Implementation>
+</Method>
+
+<Method name="DropCounter">
+<Description><![CDATA[
+Used internally, by <class>Net.MQTT.Client</class> instances.
+<p>Deletes the corresponding counter, when a Client is about to stop (more specifically: when its <class>Net.MQTT.Agent</class> is stopped).</p>]]></Description>
+<ClassMethod>1</ClassMethod>
+<CodeMode>expression</CodeMode>
+<FormalSpec>pClientId:%String</FormalSpec>
+<ReturnType>%Status</ReturnType>
+<Implementation><![CDATA[..%DeleteId(pClientId, 4)
+]]></Implementation>
+</Method>
+
+<Storage name="Default">
+<Type>%Library.CacheStorage</Type>
+<DataLocation>^Net.MQTT.Aux93C.MessageCounterD</DataLocation>
+<DefaultData>MessageCounterDefaultData</DefaultData>
+<IdLocation>^Net.MQTT.Aux93C.MessageCounterD</IdLocation>
+<IndexLocation>^Net.MQTT.Aux93C.MessageCounterI</IndexLocation>
+<StreamLocation>^Net.MQTT.Aux93C.MessageCounterS</StreamLocation>
+<Data name="MessageCounterDefaultData">
+<Structure>listnode</Structure>
+<Subscript/>
+<Value name="1">
+<Value>%%CLASSNAME</Value>
+</Value>
+<Value name="2">
+<Value>LastMessageId</Value>
+</Value>
+</Data>
+</Storage>
+</Class>
+</Export>

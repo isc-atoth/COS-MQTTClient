@@ -1,0 +1,985 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Export generator="Cache" version="25" zv="Cache for Windows (x86-64) 2016.2 (Build 665U)" ts="2016-08-08 23:03:44">
+<Class name="Net.MQTT.Agent">
+<Description><![CDATA[
+The MQTT Agent is always started by a <class>Net.MQTT.Client</class> in the background to manage the real communication with the broker.
+<p>The agent inherits its settings from the Client, which started it and it is responsible for:<ul>
+<li>Building the TCP connection to the broker.</li>
+<li>Executing the tasks created by the Client (and the Agent itself) based on the <class>Net.MQTT.Auxiliary.TaskList</class> records.
+ E.g.: sending various messages to the broker.</li>
+<li>Keeping the connection alive by sending PING requests to the broker, when no other messages has been sent for a certain amount of time.</li>
+<li>Listening for incoming messages from the broker and triggering appropriate actions based on the message type.</li>
+</ul></p>]]></Description>
+<Super>Net.MQTT.Client</Super>
+<TimeChanged>64138,82953.716476</TimeChanged>
+<TimeCreated>64051,64922.792357</TimeCreated>
+
+<Property name="connected">
+<Type>%Boolean</Type>
+<InitialExpression>0</InitialExpression>
+</Property>
+
+<Property name="device">
+<Type>%String</Type>
+</Property>
+
+<Property name="saveIODev">
+<Type>%String</Type>
+</Property>
+
+<Property name="transTable">
+<Type>%String</Type>
+<InitialExpression>##class(%IO.I.TranslationDevice).GetCharEncodingTable("UTF-8")</InitialExpression>
+</Property>
+
+<Property name="lastMessage">
+<Type>%TimeStamp</Type>
+<InitialExpression>$ZDateTime($ZTimeStamp, 3, 1)</InitialExpression>
+</Property>
+
+<Property name="lastPing">
+<Type>%TimeStamp</Type>
+</Property>
+
+<Property name="fatalError">
+<Type>%Boolean</Type>
+<InitialExpression>0</InitialExpression>
+</Property>
+
+<Method name="StartListening">
+<Description><![CDATA[
+This method is called directly (as a background job) by the <class>Net.MQTT.Client</class> to start the Agent.
+<p><var>pInitialState</var> is the XML serialized content of the calling Client object, from which the agent can populate its own properties.</p>
+<p><var>pUsername</var> and <var>pPassword</var> are the optional credentials to be sent to the broker on connecting.</p>
+<p>The Agent builds the TCP connection to the broker, sends a <b><var>CONNECT</var></b> message and then starts to communicate with the broker.</p>]]></Description>
+<ClassMethod>1</ClassMethod>
+<FormalSpec>pInitialState:%String,pUsername:%String="",pPassword:%String=""</FormalSpec>
+<Implementation><![CDATA[
+	Set ret = ""
+	Set reader = ##class(%XML.Reader).%New()
+	Do reader.Correlate("root", ..%ClassName(1))
+	Set tSC = reader.OpenString(pInitialState)
+	If $$$ISOK(tSC) && reader.Next(.agent) {
+		Set tSC = agent.DoCONNECT(pUsername, pPassword)
+		If $$$ISOK(tSC) {
+			Do agent.Listen()
+		}
+		Else {
+			Set ret = $System.Status.GetErrorText(tSC)
+		}
+	}
+	Else {
+		Set ret = "MQTT Agent cannot start (missing initial state)"
+	}
+]]></Implementation>
+</Method>
+
+<Method name="Listen">
+<Description><![CDATA[
+The main function of the Agent. Unless a fatal error happens, it runs in an endless loop, doing onw of the followin things in every loop:<ul>
+<li>If a pending <class>Net.MQTT.Auxiliary.TaskList</class> object can be found for the Agent's unique <property>connectionId</property>,
+ it starts to execute the corresponding task, then signals the initiator of the task via the <class>%SYSTEM.Event</class> API.</li>
+<li>If no response has arrived from the broker for the last PING request within the <property>KeepAliveInterval</property>
+ it treats the connection to the broker broken and stops.</li>
+<li>If no other messages has been sent to the broker for a certain amount of time (~ 80% of the ) <property>KeepAliveInterval</property>,
+ it sends a PING request to keep the connection alive.</li>
+<li>Listens for incoming messages.</li>
+</ul>]]></Description>
+<Internal>1</Internal>
+<Private>1</Private>
+<Implementation><![CDATA[
+	If ..SSLConfig = "" {
+		Use ..device
+	}
+	Else {
+		Use ..device:(:::::::/SSL=..SSLConfig)
+	}
+	$$$MQTTTraceINF("Agent for " _ ..ClientId _ " to <" _ ..Host _ ":" _ ..Port _ "> starts listening")
+	Do SetIO^%NLS("RAW")
+	While 1 {
+		If ..fatalError {
+			Quit
+		}
+		
+		TRY {
+			Set tSC = ##class(Net.MQTT.Auxiliary.TaskList).AcquireNext(..connectionId, .taskId, .contextId, .action)
+			If $$$ISOK(tSC) {
+				If taskId '= "" {
+					$$$MQTTTraceINF("Agent for " _ ..ClientId _ " to <" _ ..Host _ ":" _ ..Port _ "> processes task (" _taskId _ ")")
+					Set tSC = $METHOD($this, "Do" _ action, taskId, contextId)
+					Set tSC = ##class(Net.MQTT.Auxiliary.TaskList).SignalTask(..connectionId, taskId, tSC, (''..debugMode))
+				}
+				ElseIf (..lastPing '= "") && ($System.SQL.DATEDIFF("s", ..lastPing, $ZDateTime($ZTimeStamp, 3, 1)) > ..KeepAliveInterval) {
+					$$$MQTTTraceERR("PINGRESP message has not arrived from <" _ ..Host _ ":" _ ..Port _ "> within the timeout interval")
+					Set ..fatalError = 1
+				}
+				ElseIf $System.SQL.DATEDIFF("s", ..lastMessage, $ZDateTime($ZTimeStamp, 3, 1)) > (..KeepAliveInterval * .8) {
+					$$$MQTTTraceINF("Agent for " _ ..ClientId _ " to <" _ ..Host _ ":" _ ..Port _ "> sends ping")
+					Set tSC = ..SendPINGREQ()
+					If $$$ISERR(tSC) {
+						$$$MQTTTraceERR("PINGREQ message cannot be sent to <" _ ..Host _ ":" _ ..Port _ ">")
+						Set ..fatalError = 1
+					}
+				}
+				Else {
+					Set tSC = ..RecvMessage()
+				}
+			}
+		}
+		CATCH ex {
+			Set tSC = ex.AsStatus()
+		}
+		
+		If $$$ISERR(tSC) {
+			$$$MQTTTraceERR($System.Status.GetErrorText(tSC))
+		}
+	}
+	
+	Do ..CloseDev()
+	Use ..saveIODev
+	
+	Quit
+]]></Implementation>
+</Method>
+
+<Method name="RecvMessage">
+<Description><![CDATA[
+Listens for incoming messages.
+<p>First takes a 1 byte MQTT Header. The takes the following 1 to 4 bytes to define the remaining length of the message.
+ Finally reads the remaining part of the message and triggers appropriate action based on the message type (extracted from the Header).</p>]]></Description>
+<ReturnType>%Status</ReturnType>
+<Implementation><![CDATA[
+ Set tSC = $$$OK
+ TRY {	
+	Read header#1:0 Set timeout = ('$Test)
+	If 'timeout {
+		$$$MQTTTraceIN("Header", header)
+		Set type	= ..GetMessageType(header)
+		Set typeT	= $$$MQTTMsgType(type)
+		Set dup		= ..IsDuplicate(header)
+		Set qos		= ..GetQoSLevel(header)
+		Set retain	= ..IsRetain(header)
+		
+		Set multi = 1, length = 0, pos = 2, rl = ""
+		For i = 1: 1: 4 {
+			Read next#1:..ReadTimeout Set timeout = ('$Test)
+			If timeout {
+				Set tSC = $$$ERROR($$$GeneralError, "Invalid " _ typeT _ " message has arrived from <" _ ..Host _ ":" _ ..Port _ "> (missing Remaining Length)")
+				Quit
+			}
+			Set rl = rl _ next
+			Set next = $Ascii(next)
+			Set length = length + ((next # 128) * multi)
+			If next < 128 { Quit }
+			Set multi = multi * 128
+		}
+		
+		Set content = ""
+		$$$MQTTTraceIN("Length", rl)
+		If $$$ISOK(tSC) && (length > 0) {
+			Read content#length:..ReadTimeout Set timeout = ('$Test)
+			If timeout || ($Length(content) '= length) {
+				Set tSC = $$$ERROR($$$GeneralError, "Invalid " _ typeT _ " message has arrived from <" _ ..Host _ ":" _ ..Port _ "> (missing content)")
+			}
+		}
+		If $$$ISOK(tSC) {
+			$$$MQTTTraceIN(typeT, header _ rl _ content)
+		}
+		Set tSC = $METHOD($this, "Recv" _ typeT, dup, qos, retain, content)
+	}
+ }
+ CATCH ex {
+	If ex.%IsA("%Exception.SystemException") && (ex.Name = "<READ>") {
+		$$$MQTTTraceERR("MQTT broker probably closed TCP connection to <" _ ..Host _ ":" _ ..Port _ "> (READ error)")
+		Set ..fatalError = 1
+	}
+	Set tSC = ex.AsStatus() 
+ } 
+ Quit tSC
+]]></Implementation>
+</Method>
+
+<Method name="DoCONNECT">
+<Description><![CDATA[
+Builds the TCP connection to the MQTT broker and sends the <b><var>CONNECT</var></b> message.]]></Description>
+<Internal>1</Internal>
+<FormalSpec>pUsername:%String="",pPassword:%String=""</FormalSpec>
+<Private>1</Private>
+<ReturnType>%Status</ReturnType>
+<Implementation><![CDATA[
+	Set tSC = $$$OK
+	$$$MQTTTraceINF("Agent for " _ ..ClientId _ " to <" _ ..Host _ ":" _ ..Port _ "> is starting")
+	
+	Set ..saveIODev = $IO
+	If ('..connected) {
+		Set ..device = "|TCP|" _ ..Port _ "|" _ $P($Job, ":")
+		Open ..device:(..Host:..Port::::::$Case(..SSLConfig, "": "", :"/SSL="_..SSLConfig)):..ConnectTimeout Set timeout=('$Test)
+		
+		If timeout {
+			$$$MQTTTraceERR("Agent for " _ ..ClientId _ " to <" _ ..Host _ ":" _ ..Port _ "> failed to start TCP connection")
+			Quit $$$ERROR($$$GeneralError, "TCP Connection to <" _ ..Host _ ":" _ ..Port _ "> has not succeeded within the timeout interval")
+		}
+		Else {
+			$$$MQTTTraceINF("Agent for " _ ..ClientId _ " to <" _ ..Host _ ":" _ ..Port _ "> started TCP connection")
+			Set ..connected = 1
+		}
+	}
+	
+	If ..SSLConfig = "" {
+		Use ..device
+	}
+	Else {
+		Use ..device:(:::::::/SSL=..SSLConfig)
+	}
+	Do SetIO^%NLS("RAW")
+	Set tSC = ..SendCONNECT(pUsername, pPassword)
+	If $$$ISERR(tSC) {
+		Do ..CloseDev()
+	} 
+	Use ..saveIODev
+	
+	Quit tSC
+]]></Implementation>
+</Method>
+
+<Method name="DoDISCONNECT">
+<Description><![CDATA[
+Sends a <b><var>DISCONNECT</var></b> message to the MQTT broker and closes the TCP connection.]]></Description>
+<Internal>1</Internal>
+<FormalSpec>pTaskId:%String,pConnectionId:%String</FormalSpec>
+<Private>1</Private>
+<ReturnType>%Status</ReturnType>
+<Implementation><![CDATA[
+	Set tSC = ..SendDISCONNECT()
+	Do ..CloseDev()
+	Use ..saveIODev
+	
+	Quit tSC
+]]></Implementation>
+</Method>
+
+<Method name="DoSUBSCRIBE">
+<Description><![CDATA[
+Sends a <b><var>SUBSCRIBE</var></b> message to the MQTT broker. 
+<p>The <property>ContextId</property> of the corresponding <class>Net.MQTT.Auxiliary.TaskList</class> object is a Message Idenifier.
+If it contains a colon, this is a repeated attempt, because no acknowledge has been received from the broker within the defined timout period.</p>
+<p>The details of the <b><var>SUBSCRIBE</var></b> message must be stored in a <class>Net.MQTT.Auxiliary.Subscription</class> object.</p>]]></Description>
+<Internal>1</Internal>
+<FormalSpec>pTaskId:%String,pMessageId:%String</FormalSpec>
+<Private>1</Private>
+<ReturnType>%Status</ReturnType>
+<Implementation><![CDATA[
+	Set dup = 0
+	Set msgid = pMessageId
+	If $Length(pMessageId, ":") > 1 {
+		Set msgid = $Piece(pMessageId, ":", 1)
+		Set dup = (''$Piece(pMessageId, ":", 2))
+	}
+	Set topics = ##class(Net.MQTT.Auxiliary.Subscription).GetTopicList(..ClientId, msgid, .tSC)
+	Set:$$$ISOK(tSC) tSC = ..SendSUBSCRIBE(msgid, topics, dup)
+	
+	Quit tSC
+]]></Implementation>
+</Method>
+
+<Method name="DoUNSUBSCRIBE">
+<Description><![CDATA[
+Sends a <b><var>UNSUBSCRIBE</var></b> message to the MQTT broker. 
+<p>The <property>ContextId</property> of the corresponding <class>Net.MQTT.Auxiliary.TaskList</class> object is a Message Idenifier.
+If it contains a colon, this is a repeated attempt, because no acknowledge has been received from the broker within the defined timout period.</p>
+<p>The details of the <b><var>UNSUBSCRIBE</var></b> message must be stored in a <class>Net.MQTT.Auxiliary.Subscription</class> object.</p>]]></Description>
+<Internal>1</Internal>
+<FormalSpec>pTaskId:%String,pMessageId:%String</FormalSpec>
+<Private>1</Private>
+<ReturnType>%Status</ReturnType>
+<Implementation><![CDATA[
+	Set dup = 0
+	Set msgid = pMessageId
+	If $Length(pMessageId, ":") > 1 {
+		Set msgid = $Piece(pMessageId, ":", 1)
+		Set dup = (''$Piece(pMessageId, ":", 2))
+	}
+	Set topics = ##class(Net.MQTT.Auxiliary.Subscription).GetTopicList(..ClientId, msgid, .tSC)
+	Set:$$$ISOK(tSC) tSC = ..SendUNSUBSCRIBE(msgid, topics, dup)
+	
+	Quit tSC
+]]></Implementation>
+</Method>
+
+<Method name="DoPUBLISH">
+<Description><![CDATA[
+Sends a <b><var>PUBLISH</var></b> message to the MQTT broker. 
+<p>The <property>ContextId</property> of the corresponding <class>Net.MQTT.Auxiliary.TaskList</class> object is a <class>Net.MQTT.Auxiliary.MessageStore</class> object ID.
+If it contains a colon, this is a repeated attempt, because no acknowledge has been received from the broker within the defined timout period.</p>
+<p>The details of the <b><var>PUBLISH</var></b> message are stored in the referenced <class>Net.MQTT.Auxiliary.MessageStore</class> object.</p>
+<p>On QoS levels &gt; 0 it also pushes the <class>Net.MQTT.Auxiliary.MessageStatus</class> to the next state 
+ (either waiting for a <b><var>PUBACK</var></b> or <b><var>PUBREC</var></b> message).</p>]]></Description>
+<Internal>1</Internal>
+<FormalSpec>pTaskId:%String,pMessageStoreId:%String</FormalSpec>
+<Private>1</Private>
+<ReturnType>%Status</ReturnType>
+<Implementation><![CDATA[
+	Set dup = 0
+	Set msgid = pMessageStoreId
+	If $Length(pMessageStoreId, ":") > 1 {
+		Set msgid = $Piece(pMessageStoreId, ":", 1)
+		Set dup = (''$Piece(pMessageStoreId, ":", 2))
+	}
+	Set message = ##class(Net.MQTT.MessageStore).%OpenId(msgid, -1, .tSC)
+	Set:$$$ISOK(tSC) tSC = ..SendPUBLISH(message, dup)
+	If $$$ISOK(tSC) {
+		If message.QoSLevel = 1 {
+			Set tSC = ##class(Net.MQTT.Auxiliary.MessageStatus).AcknowledgeMessageOut(..ClientId, message.MessageId)
+		}
+		ElseIf message.QoSLevel = 2 {
+			Set tSC = ##class(Net.MQTT.Auxiliary.MessageStatus).ReceiveMessageOut(..ClientId, message.MessageId)
+		}
+	}
+	
+	Quit tSC
+]]></Implementation>
+</Method>
+
+<Method name="DoPUBACK">
+<Description><![CDATA[
+Sends a <b><var>PUBACK</var></b> message to the MQTT broker for an incoming, QoS Level 1 message. 
+<p>The <property>ContextId</property> of the corresponding <class>Net.MQTT.Auxiliary.TaskList</class> object is a Message Identifier.</p>
+<p>This is the end of the message flow of the incoming message.</p>]]></Description>
+<Internal>1</Internal>
+<FormalSpec>pTaskId:%String,pMessageId:%String</FormalSpec>
+<Private>1</Private>
+<ReturnType>%Status</ReturnType>
+<Implementation><![CDATA[
+	Set tSC = ..SendPUBACK(pMessageId)
+	Set:$$$ISOK(tSC) tSC = ##class(Net.MQTT.Auxiliary.MessageStatus).DoneMessageIn(..ClientId, pMessageId)
+	
+	Quit tSC
+]]></Implementation>
+</Method>
+
+<Method name="DoPUBREC">
+<Description><![CDATA[
+Sends a <b><var>PUBREC</var></b> message to the MQTT broker for an incoming, QoS Level 2 message. 
+<p>The <property>ContextId</property> of the corresponding <class>Net.MQTT.Auxiliary.TaskList</class> object is a Message Identifier.</p>
+<p>It also pushes the <class>Net.MQTT.Auxiliary.MessageStatus</class> to the next state (waiting for a <b><var>PUBREL</var></b> message).</p>]]></Description>
+<Internal>1</Internal>
+<FormalSpec>pTaskId:%String,pMessageId:%String</FormalSpec>
+<Private>1</Private>
+<ReturnType>%Status</ReturnType>
+<Implementation><![CDATA[
+	Set tSC = ..SendPUBREC(pMessageId)
+	Set:$$$ISOK(tSC) tSC = ##class(Net.MQTT.Auxiliary.MessageStatus).ReleaseMessageIn(..ClientId, pMessageId)
+	
+	Quit tSC
+]]></Implementation>
+</Method>
+
+<Method name="DoPUBREL">
+<Description><![CDATA[
+Sends a <b><var>PUBREL</var></b> message to the MQTT broker for an outgoing, QoS Level 2 message. 
+<p>The <property>ContextId</property> of the corresponding <class>Net.MQTT.Auxiliary.TaskList</class> object is a Message Identifier.
+ If it contains a colon, this is a repeated attempt, because no acknowledge has been received for the original <b><var>PUBLISH</var></b> message
+ from the broker within the defined timout period.</p>
+<p>It also pushes the <class>Net.MQTT.Auxiliary.MessageStatus</class> to the next state (waiting for a <b><var>PUBCOMP</var></b> message).</p>]]></Description>
+<Internal>1</Internal>
+<FormalSpec>pTaskId:%String,pMessageId:%String</FormalSpec>
+<Private>1</Private>
+<ReturnType>%Status</ReturnType>
+<Implementation><![CDATA[
+	Set dup = 0
+	Set msgid = pMessageId
+	If $Length(pMessageId, ":") > 1 {
+		Set msgid = $Piece(pMessageId, ":", 1)
+		Set dup = (''$Piece(pMessageId, ":", 2))
+	}
+	Set tSC = ..SendPUBREL(msgid, dup)
+	Set:$$$ISOK(tSC) tSC = ##class(Net.MQTT.Auxiliary.MessageStatus).CompleteMessageOut(..ClientId, pMessageId)
+	
+	Quit tSC
+]]></Implementation>
+</Method>
+
+<Method name="DoPUBCOMP">
+<Description><![CDATA[
+Sends a <b><var>PUBCOMP</var></b> message to the MQTT broker for an incoming, QoS Level 2 message. 
+<p>The <property>ContextId</property> of the corresponding <class>Net.MQTT.Auxiliary.TaskList</class> object is a Message Identifier.</p>
+<p>This is the end of the message flow of the incoming message.</p>]]></Description>
+<Internal>1</Internal>
+<FormalSpec>pTaskId:%String,pMessageId:%String</FormalSpec>
+<Private>1</Private>
+<ReturnType>%Status</ReturnType>
+<Implementation><![CDATA[
+	Set tSC = ..SendPUBCOMP(pMessageId)
+	Set:$$$ISOK(tSC) tSC = ##class(Net.MQTT.Auxiliary.MessageStatus).DoneMessageIn(..ClientId, pMessageId)
+	
+	Quit tSC
+]]></Implementation>
+</Method>
+
+<Method name="SendCONNECT">
+<Description><![CDATA[
+Creates the variable header and payload of a <b><var>CONNECT</var></b> message and sends the package to the MQTT broker.]]></Description>
+<Internal>1</Internal>
+<FormalSpec>pUsername:%String="",pPassword:%String=""</FormalSpec>
+<Private>1</Private>
+<ReturnType>%Status</ReturnType>
+<Implementation><![CDATA[
+	If pUsername = "" {
+		Set pPassword = ""
+	}
+	Set will = ($IsObject(..LastWill) && (..LastWill.Topic '= "") && (..LastWill.Content '= ""))
+	
+	Set varhdr = $Char($Select(..CleanSession: $$$MQTTCleanSession, 1: 0)
+		+ $Select(will: $$$MQTTWillFlag, 1: 0)
+		+ $Select((will && ..LastWill.QoSLevel = 1): $$$MQTTWillQoS1, (will && ..LastWill.QoSLevel = 2): $$$MQTTWillQoS2, 1: 0)
+		+ $Select((will && ..LastWill.Retain): $$$MQTTWillRetain, 1: 0)
+		+ $Select(pUsername '= "": $$$MQTTUsernameFlag, 1: 0)
+		+ $Select(pPassword '= "": $$$MQTTPasswordFlag, 1: 0)
+	)
+	
+	Set varhdr	= ..GetProtocolName() _ ..GetProtocolVersion() _ varhdr _ $$$MQTTEncodeNumber(..KeepAliveInterval)
+	Set payload	= ..GetUTFString(..ClientId)
+	If will {
+		Set payload = payload _ ..GetUTFString(..LastWill.Topic) _ ..GetUTFString(..LastWill.Content)
+	}
+	If pUsername '= "" {
+		Set payload = payload _ ..GetUTFString(pUsername)
+		If pPassword '= "" {
+			Set payload = payload _ ..GetUTFString(pPassword)
+		}
+	}
+	
+	Quit ..PackSendMsg(varhdr_payload, $$$MQTTCONNECT)
+]]></Implementation>
+</Method>
+
+<Method name="SendDISCONNECT">
+<Description><![CDATA[
+Creates a <b><var>DISCONNECT</var></b> message and sends the package to the MQTT broker.]]></Description>
+<Internal>1</Internal>
+<Private>1</Private>
+<ReturnType>%Status</ReturnType>
+<Implementation><![CDATA[	Quit ..PackSendMsg("", $$$MQTTDISCONNECT)
+]]></Implementation>
+</Method>
+
+<Method name="SendPINGREQ">
+<Description><![CDATA[
+Creates a <b><var>PINGREQ</var></b> message and sends the package to the MQTT broker.]]></Description>
+<Internal>1</Internal>
+<Private>1</Private>
+<ReturnType>%Status</ReturnType>
+<Implementation><![CDATA[
+	Set tSC = ..PackSendMsg("", $$$MQTTPINGREQ)
+	Set:$$$ISOK(tSC) ..lastPing = $ZDateTime($ZTimeStamp, 3, 1)
+	
+	Quit tSC
+]]></Implementation>
+</Method>
+
+<Method name="SendSUBSCRIBE">
+<Description><![CDATA[
+Creates the variable header and payload of a <b><var>SUBSCRIBE</var></b> message and sends the package to the MQTT broker.]]></Description>
+<Internal>1</Internal>
+<FormalSpec>pMessageId:%Integer,pTopics:%ListOfObjects,pDup:%Boolean=0</FormalSpec>
+<Private>1</Private>
+<ReturnType>%Status</ReturnType>
+<Implementation><![CDATA[
+#dim topic As Net.MQTT.Message
+
+	Set varhdr = $$$MQTTEncodeNumber(+pMessageId)
+	
+	Set payload = "", key = ""
+	While 1 {
+		Set topic = pTopics.GetNext(.key) Quit:(key = "")
+		Set payload = payload _ ..GetUTFString(topic.Topic) _ $Char($Case(topic.QoSLevel, 2: $$$MQTTSubQoS2, 1: $$$MQTTSubQoS1, : 0))
+	}
+	
+	Set tSC = ..PackSendMsg(varhdr_payload, $$$MQTTSUBSCRIBE, pDup, 1)
+	Quit tSC
+]]></Implementation>
+</Method>
+
+<Method name="SendUNSUBSCRIBE">
+<Description><![CDATA[
+Creates the variable header and payload of an <b><var>UNSUBSCRIBE</var></b> message and sends the package to the MQTT broker.]]></Description>
+<Internal>1</Internal>
+<FormalSpec>pMessageId:%Integer,pTopics:%ListOfObjects,pDup:%Boolean=0</FormalSpec>
+<Private>1</Private>
+<ReturnType>%Status</ReturnType>
+<Implementation><![CDATA[
+#dim topic As Net.MQTT.Message
+
+	Set varhdr = $$$MQTTEncodeNumber(+pMessageId)
+	
+	Set payload = "", key = ""
+	While 1 {
+		Set topic = pTopics.GetNext(.key) Quit:(key = "")
+		Set payload = payload _ ..GetUTFString(topic.Topic)
+	}
+	
+	Set tSC = ..PackSendMsg(varhdr_payload, $$$MQTTUNSUBSCRIBE, pDup, 1)
+	Quit tSC
+]]></Implementation>
+</Method>
+
+<Method name="SendPUBLISH">
+<Description><![CDATA[
+Creates the variable header and payload of a <b><var>PUBLISH</var></b> message and sends the package to the MQTT broker.]]></Description>
+<Internal>1</Internal>
+<FormalSpec>pMessage:Net.MQTT.MessageStore,pDup:%Boolean=0</FormalSpec>
+<Private>1</Private>
+<ReturnType>%Status</ReturnType>
+<Implementation><![CDATA[
+	Set varhdr = ..GetUTFString(pMessage.Topic) _ $Select(pMessage.QoSLevel > 0: $$$MQTTEncodeNumber(+pMessage.MessageId), 1: "")
+	
+	Set tSC = ..PackSendMsg(varhdr_pMessage.Content, $$$MQTTPUBLISH, pDup, pMessage.QoSLevel, pMessage.Retain)
+	Quit tSC
+]]></Implementation>
+</Method>
+
+<Method name="SendPUBACK">
+<Description><![CDATA[
+Creates the variable header of a <b><var>PUBACK</var></b> message and sends the package to the MQTT broker.]]></Description>
+<Internal>1</Internal>
+<FormalSpec>pMessageId:%Integer</FormalSpec>
+<Private>1</Private>
+<ReturnType>%Status</ReturnType>
+<Implementation><![CDATA[
+	Set varhdr = $$$MQTTEncodeNumber(+pMessageId)
+	
+	Set tSC = ..PackSendMsg(varhdr, $$$MQTTPUBACK)
+	Quit tSC
+]]></Implementation>
+</Method>
+
+<Method name="SendPUBREC">
+<Description><![CDATA[
+Creates the variable header of a <b><var>PUBREC</var></b> message and sends the package to the MQTT broker.]]></Description>
+<Internal>1</Internal>
+<FormalSpec>pMessageId:%Integer</FormalSpec>
+<Private>1</Private>
+<ReturnType>%Status</ReturnType>
+<Implementation><![CDATA[
+	Set varhdr = $$$MQTTEncodeNumber(+pMessageId)
+	
+	Set tSC = ..PackSendMsg(varhdr, $$$MQTTPUBREC)
+	Quit tSC
+]]></Implementation>
+</Method>
+
+<Method name="SendPUBREL">
+<Description><![CDATA[
+Creates the variable header of a <b><var>PUBREL</var></b> message and sends the package to the MQTT broker.]]></Description>
+<Internal>1</Internal>
+<FormalSpec>pMessageId:%Integer,pDup:%Boolean=0</FormalSpec>
+<Private>1</Private>
+<ReturnType>%Status</ReturnType>
+<Implementation><![CDATA[
+	Set varhdr = $$$MQTTEncodeNumber(+pMessageId)
+	
+	Set tSC = ..PackSendMsg(varhdr, $$$MQTTPUBREL, pDup, 1)
+	Quit tSC
+]]></Implementation>
+</Method>
+
+<Method name="SendPUBCOMP">
+<Description><![CDATA[
+Creates the variable header of a <b><var>PUBCOMP</var></b> message and sends the package to the MQTT broker.]]></Description>
+<Internal>1</Internal>
+<FormalSpec>pMessageId:%Integer</FormalSpec>
+<Private>1</Private>
+<ReturnType>%Status</ReturnType>
+<Implementation><![CDATA[
+	Set varhdr = $$$MQTTEncodeNumber(+pMessageId)
+	
+	Set tSC = ..PackSendMsg(varhdr, $$$MQTTPUBCOMP)
+	Quit tSC
+]]></Implementation>
+</Method>
+
+<Method name="RecvCONNACK">
+<Description><![CDATA[
+Evaluates a <b><var>CONNACK</var></b> message, received from the MQTT Broker and signals the initiator (<class>Net.MQTT.Client</class>)
+ via the <class>%SYSTEM.Event</class> API about the success or failure of the connection attempt.]]></Description>
+<Internal>1</Internal>
+<FormalSpec>pDup:%Boolean,pQoS:%Integer,pRetain:%Boolean,pContent:%String</FormalSpec>
+<Private>1</Private>
+<ReturnType>%Status</ReturnType>
+<Implementation><![CDATA[
+	Set tSC = $$$OK
+	
+	Set ret = ""
+	If $Length(pContent) '= 2 {
+		Set tSC = $$$ERROR($$$GeneralError, "Invalid CONNACK message has arrived from <" _ ..Host _ ":" _ ..Port _ "> (length: " _ $Length(pContent) _ " <> 2)")
+	}
+	Else {
+		Set ret = +$Ascii($Extract(pContent, 2))
+		If ret = 1 { Set tSC = $$$ERROR($$$GeneralError, "Connection to <" _ ..Host _ ":" _ ..Port _ "> failed (unacceptable protocol version)") }
+		ElseIf ret = 2 { Set tSC = $$$ERROR($$$GeneralError, "Connection to <" _ ..Host _ ":" _ ..Port _ "> failed (identifier rejected)") }
+		ElseIf ret = 3 { Set tSC = $$$ERROR($$$GeneralError, "Connection to <" _ ..Host _ ":" _ ..Port _ "> failed (server unavailable)") }
+		ElseIf ret = 4 { Set tSC = $$$ERROR($$$GeneralError, "Connection to <" _ ..Host _ ":" _ ..Port _ "> failed (bad username or password)") }
+		ElseIf ret = 5 { Set tSC = $$$ERROR($$$GeneralError, "Connection to <" _ ..Host _ ":" _ ..Port _ "> failed (not authorized)") }
+	}
+	
+	Do $System.Event.Signal("^MQTT.Connect(""" _ ..connectionId _ """)", $Select($$$ISOK(tSC): "", 1: $System.Status.GetErrorText(tSC)))
+	
+	Quit tSC
+]]></Implementation>
+</Method>
+
+<Method name="RecvPINGRESP">
+<Description><![CDATA[
+Evaluates a <b><var>PINGRESP</var></b> message, received from the MQTT Broker and clears the <property>lastPing</property> property,
+ so the Agent can know that the broker is still responsive and the connection is successfully kept alive.]]></Description>
+<Internal>1</Internal>
+<FormalSpec>pDup:%Boolean,pQoS:%Integer,pRetain:%Boolean,pContent:%String</FormalSpec>
+<Private>1</Private>
+<ReturnType>%Status</ReturnType>
+<Implementation><![CDATA[
+	Set tSC = $$$OK
+	
+	If pContent '= "" {
+		Set tSC = $$$ERROR($$$GeneralError, "Invalid PINGRESP message has arrived from <" _ ..Host _ ":" _ ..Port _ ">")
+	}
+	Else {
+		Set ..lastPing = ""
+	}
+	
+	Quit tSC
+]]></Implementation>
+</Method>
+
+<Method name="RecvUNSUBACK">
+<Description><![CDATA[
+Evaluates an <b><var>UNSUBACK</var></b> message, received from the MQTT Broker and 
+ signals the <class>Net.MQTT.Client</class> waiting for this acknowledge of a previously sent <b><var>UNSUBSCRIBE</var></b> message.]]></Description>
+<Internal>1</Internal>
+<CodeMode>expression</CodeMode>
+<FormalSpec>pDup:%Boolean,pQoS:%Integer,pRetain:%Boolean,pContent:%String</FormalSpec>
+<Private>1</Private>
+<ReturnType>%Status</ReturnType>
+<Implementation><![CDATA[..RecvAcknowledge("UNSUBACK", pDup, pQoS, pRetain, pContent)
+]]></Implementation>
+</Method>
+
+<Method name="RecvPUBACK">
+<Description><![CDATA[
+Evaluates a <b><var>PUBACK</var></b> message, received from the MQTT Broker and 
+ signals the <class>Net.MQTT.Client</class> waiting for this acknowledge of a previously published QoS Level 1 message.
+<p>This is the end of the message flow of the outgoing message.</p>]]></Description>
+<Internal>1</Internal>
+<FormalSpec>pDup:%Boolean,pQoS:%Integer,pRetain:%Boolean,pContent:%String</FormalSpec>
+<Private>1</Private>
+<ReturnType>%Status</ReturnType>
+<Implementation><![CDATA[
+	Set tSC = ..RecvAcknowledge("PUBACK", pDup, pQoS, pRetain, pContent, .msgid)
+	Set:$$$ISOK(tSC) tSC = ##class(Net.MQTT.Auxiliary.MessageStatus).DoneMessageOut(..ClientId, msgid)
+
+	Quit tSC
+]]></Implementation>
+</Method>
+
+<Method name="RecvPUBREC">
+<Description><![CDATA[
+Evaluates a <b><var>PUBREC</var></b> message, received from the MQTT Broker and 
+ signals the <class>Net.MQTT.Client</class> waiting for this acknowledge of a previously published QoS Level 2 message.
+<p>It also pushes the <class>Net.MQTT.Auxiliary.MessageStatus</class> to the next state (a <b><var>PUBREL</var></b> message has to be sent).</p>]]></Description>
+<Internal>1</Internal>
+<FormalSpec>pDup:%Boolean,pQoS:%Integer,pRetain:%Boolean,pContent:%String</FormalSpec>
+<Private>1</Private>
+<ReturnType>%Status</ReturnType>
+<Implementation><![CDATA[
+	Set tSC = ..RecvAcknowledge("PUBREC", pDup, pQoS, pRetain, pContent, .msgid)
+	Set:$$$ISOK(tSC) tSC = ##class(Net.MQTT.Auxiliary.MessageStatus).ReleaseMessageOut(..ClientId, msgid)
+
+	Quit tSC
+]]></Implementation>
+</Method>
+
+<Method name="RecvPUBREL">
+<Description><![CDATA[
+Evaluates a <b><var>PUBREL</var></b> message, received from the MQTT Broker.
+<p>It pushes the <class>Net.MQTT.Auxiliary.MessageStatus</class> to the next state (a <b><var>PUBCOMP</var></b> message has to be sent),
+ and cretes a new task (<class>Net.MQTT.Auxiliary.TaskList</class>) to complete the next step of the QoS Level 2 message flow.</p>]]></Description>
+<Internal>1</Internal>
+<FormalSpec>pDup:%Boolean,pQoS:%Integer,pRetain:%Boolean,pContent:%String</FormalSpec>
+<Private>1</Private>
+<ReturnType>%Status</ReturnType>
+<Implementation><![CDATA[
+	Set tSC = ..RecvAcknowledge("PUBREL", pDup, pQoS, pRetain, pContent, .msgid)
+	Set:$$$ISOK(tSC) tSC = ##class(Net.MQTT.Auxiliary.MessageStatus).CompleteMessageIn(..ClientId, msgid)
+	Set:$$$ISOK(tSC) taskid = ##class(Net.MQTT.Auxiliary.TaskList).CreateNewTask(..connectionId, msgid, "PUBCOMP", .tSC)
+
+	Quit tSC
+]]></Implementation>
+</Method>
+
+<Method name="RecvPUBCOMP">
+<Description><![CDATA[
+Evaluates a <b><var>PUBCOMP</var></b> message, received from the MQTT Broker and 
+ signals the <class>Net.MQTT.Client</class> waiting for this acknowledge of a previously published QoS Level 2 message.
+<p>This is the end of the message flow of the outgoing message.</p>]]></Description>
+<Internal>1</Internal>
+<FormalSpec>pDup:%Boolean,pQoS:%Integer,pRetain:%Boolean,pContent:%String</FormalSpec>
+<Private>1</Private>
+<ReturnType>%Status</ReturnType>
+<Implementation><![CDATA[
+	Set tSC = ..RecvAcknowledge("PUBCOMP", pDup, pQoS, pRetain, pContent, .msgid)
+	Set:$$$ISOK(tSC) tSC = ##class(Net.MQTT.Auxiliary.MessageStatus).DoneMessageOut(..ClientId, msgid)
+	
+	Quit tSC
+]]></Implementation>
+</Method>
+
+<Method name="RecvAcknowledge">
+<Description><![CDATA[
+Generic method for evaluating an acknowledge type message and signaling the appropriate process via the <class>%SYSTEM.Event</class> API
+ waiting for this acknowledge.]]></Description>
+<Internal>1</Internal>
+<FormalSpec>pType:%String,pDup:%Boolean,pQoS:%Integer,pRetain:%Boolean,pContent:%String,*pMsgId:%Integer</FormalSpec>
+<Private>1</Private>
+<ReturnType>%Status</ReturnType>
+<Implementation><![CDATA[
+	Set tSC = $$$OK
+	
+	If $Length(pContent) '= 2 {
+		Set tSC = $$$ERROR($$$GeneralError, "Invalid " _ pType _ " message has arrived from <" _ ..Host _ ":" _ ..Port _ "> (length: " _ $Length(pContent) _ " <> 2)")
+	}
+	Else {
+		Set pMsgId = $$$MQTTDecodeNumber(pContent)
+		Do ##class(Net.MQTT.Auxiliary.TaskList).SignalAck(..connectionId, pMsgId, pType, $Select($$$ISOK(tSC): "", 1: $System.Status.GetErrorText(tSC)))
+	}
+	
+	Quit tSC
+]]></Implementation>
+</Method>
+
+<Method name="RecvSUBACK">
+<Description><![CDATA[
+Evaluates a <b><var>SUBACK</var></b> message, received from the MQTT Broker,
+ stores the QoS levels granted by the broker on the various items of the subscription message (see: <class>Net.MQTT.Auxiliary.Subscription</class>)
+ and signals the <class>Net.MQTT.Client</class> waiting for this acknowledge of the previously sent <b><var>SUBSCRIBE</var></b> message.]]></Description>
+<Internal>1</Internal>
+<FormalSpec>pDup:%Boolean,pQoS:%Integer,pRetain:%Boolean,pContent:%String</FormalSpec>
+<Private>1</Private>
+<ReturnType>%Status</ReturnType>
+<Implementation><![CDATA[
+	Set tSC = $$$OK
+	
+	If $Length(pContent) < 2 {
+		Set tSC = $$$ERROR($$$GeneralError, "Invalid SUBACK message has arrived from <" _ ..Host _ ":" _ ..Port _ "> (length < 2)")
+	}
+	Else {
+		Set msgid = $$$MQTTDecodeNumber($Extract(pContent, 1, 2))
+		Set cnt = ##class(Net.MQTT.Auxiliary.Subscription).GetTopicCount(..ClientId, msgid, .tSC)
+		If $$$ISOK(tSC) {
+			If $Length(pContent) '= (2 + cnt) {
+				Set tSC = $$$ERROR($$$GeneralError, "Invalid SUBACK message has arrived from <" _ ..Host _ ":" _ ..Port _ "> (# of topics)")
+			}
+			Else {
+				For i = 1: 1: cnt {
+					Set tSC = ##class(Net.MQTT.Auxiliary.Subscription).AckTopic(..ClientId, msgid, i, $Case($Ascii($Extract(pContent, 2 + i)), $$$MQTTSubQoS2: 2, $$$MQTTSubQoS1: 1, : 0))
+					Quit:$$$ISERR(tSC)
+				}
+			}
+		}
+		Do ##class(Net.MQTT.Auxiliary.TaskList).SignalAck(..connectionId, msgid, "SUBACK", $Select($$$ISOK(tSC): "", 1: $System.Status.GetErrorText(tSC)))
+	}
+	
+	Quit tSC
+]]></Implementation>
+</Method>
+
+<Method name="RecvPUBLISH">
+<Description><![CDATA[
+Evaluates a <b><var>PUBLISH</var></b> message, received from the MQTT Broker and
+ sends the incoming message to the <property>OnMessage</property> callback method, which is responsible for
+ optionally filtering, processing and storing of the message.
+<p>If the QoS Level > 0, it also pushes the <class>Net.MQTT.Auxiliary.MessageStatus</class> to the next state 
+ (either a <b><var>PUBACK</var></b> or <b><var>PUBREC</var></b> message has to be sent),
+ and cretes a new task (<class>Net.MQTT.Auxiliary.TaskList</class>) to complete the next step of the message flow.</p>]]></Description>
+<Internal>1</Internal>
+<FormalSpec>pDup:%Boolean,pQoS:%Integer,pRetain:%Boolean,pContent:%String</FormalSpec>
+<Private>1</Private>
+<ReturnType>%Status</ReturnType>
+<Implementation><![CDATA[
+	Set tSC = $$$OK
+	
+	Set topicL = $$$MQTTDecodeNumber($Extract(pContent, 1, 2))
+	Set topic = $Extract(pContent, 3, 2 + topicL)
+	Set pos = 3 + topicL
+	If pQoS > 0 {
+		Set msgid = $$$MQTTDecodeNumber($Extract(pContent, pos, pos + 1))
+		Set pos = pos + 2
+	}
+	Else {
+		Set msgid = ""
+	}
+
+	TStart
+	Set tSC = ##class(Net.MQTT.Auxiliary.MessageStatus).%LockExtent(0)
+	TRY {
+		Set dup = $Select(pQoS > 0: pDup, 1: 0)
+		If pQoS > 0 {
+			If dup {
+				Set dup = ##class(Net.MQTT.Auxiliary.MessageStatus).IsRegisteredMessageIn(..ClientId, msgid)
+			}
+			If 'dup {
+				Set tSC = ##class(Net.MQTT.Auxiliary.MessageStatus).RegisterMessageIn(..ClientId, msgid, pQoS)
+			}
+
+			// The acknowledgement mechanism is independent from the fact, 
+			//  whether the application message is a duplicate or not, or it is successfully processed by the OnMessage handler or not.
+			Set:$$$ISOK(tSC) taskid = ##class(Net.MQTT.Auxiliary.TaskList).CreateNewTask(..connectionId, msgid, $Case(pQoS, 2: "PUBREC", : "PUBACK"), .tSC)
+		}
+	}
+	CATCH ex {
+		Set tSC = ex.AsStatus()
+	}
+	Do ##class(Net.MQTT.Auxiliaryiliary.MessageStatus).%UnlockExtent()
+	If $$$ISOK(tSC) { TCommit }
+	Else { TRollback }
+	Quit:$$$ISERR(tSC) tSC
+	
+	Do ..ProcessMessage(msgid, topic, $Extract(pContent, pos, *), pDup, pQoS, pRetain)
+	
+	Quit $$$OK
+]]></Implementation>
+</Method>
+
+<Method name="ProcessMessage">
+<Description><![CDATA[
+Evaluates the <property>OnMessage</property> setting, calls the appropriate callback method and handles potential errors.]]></Description>
+<FormalSpec>pMsgId:%String,pTopic:%String,pContent:%String,pDuplicate:%Boolean,pQoS:%Integer,pRetain:%Boolean</FormalSpec>
+<Implementation><![CDATA[
+	Set tSC = $$$OK
+	TRY {
+		Set cbClass = $Piece(..OnMessage, ":", 1)
+		Set cbMethod = $Piece(..OnMessage, ":", 2)
+		
+		Set message = ##class(Net.MQTT.Message).%New()
+		Set message.ClientId = ..ClientId
+		Set message.MessageId = pMsgId
+		Set message.Topic = pTopic
+		Set message.Content = pContent
+		Set message.QoSLevel = pQoS
+		Set message.Retain = pRetain
+		Set tSC = $CLASSMETHOD(cbClass, cbMethod, .message, pDuplicate)
+	}
+	CATCH ex {
+		Set tSC = ex.AsStatus()
+	}
+	
+	If $$$ISERR(tSC) {
+		$$$MQTTTraceERR("Message cannot be processed (ID='" _ pMsgId _ "', Content='" + pContent + "'): " + $System.Status.GetErrorText(tSC))
+	}
+]]></Implementation>
+</Method>
+
+<Method name="CloseDev">
+<Internal>1</Internal>
+<Private>1</Private>
+<Implementation><![CDATA[
+	If ..connected {
+		$$$MQTTTraceINF("Agent for " _ ..ClientId _ " to <" _ ..Host _ ":" _ ..Port _ "> is stopping TCP connection")
+		Close ..device
+		Use ..saveIODev
+		Set ..connected = 0, ..device = ""
+	}
+]]></Implementation>
+</Method>
+
+<Method name="PackSendMsg">
+<Internal>1</Internal>
+<FormalSpec>pMessage:%String,pMessageType:%Integer,pDup:%Boolean=0,pQoS:%Integer=0,pRetain:%Boolean=0</FormalSpec>
+<Private>1</Private>
+<ReturnType>%Status</ReturnType>
+<Implementation><![CDATA[
+	Set header = $Char(pMessageType 
+		+ $Select(pDup: $$$MQTTDup, 1: 0) 
+		+ $Select(pRetain: $$$MQTTRetain, 1: 0) 
+		+ $Case(pQoS, 2: $$$MQTTQoS2, 1: $$$MQTTQoS1, : 0)
+	)
+
+	Set lng = $Length(pMessage)
+	While 1 {
+		Set nxt = lng # 128
+		Set lng = lng \ 128
+		If lng > 0 {
+			Set nxt = nxt + 128
+		}
+		Set header = header _ $Char(nxt)
+		Quit:(lng '> 0)
+	}
+
+	Set msg = header_pMessage
+	Write msg, !
+	Set ..lastMessage = $ZDateTime($ZTimeStamp, 3, 1)
+	$$$MQTTTraceOUT($$$MQTTMsgType(pMessageType), msg) 
+	
+	Quit $$$OK
+]]></Implementation>
+</Method>
+
+<Method name="GetMessageType">
+<ClassMethod>1</ClassMethod>
+<FormalSpec>pHeader:%String</FormalSpec>
+<ReturnType>%Integer</ReturnType>
+<Implementation><![CDATA[
+	Set a = $Factor($Ascii(pHeader))
+	Set type = 0
+	For i = 5: 1: 8 {
+		Set type = type + ($Bit(a, i) * (2 ** (i - 1)))
+	}
+	 
+	Quit type
+]]></Implementation>
+</Method>
+
+<Method name="IsDuplicate">
+<ClassMethod>1</ClassMethod>
+<FormalSpec>pHeader:%String</FormalSpec>
+<ReturnType>%Boolean</ReturnType>
+<Implementation><![CDATA[
+	Set a = $Factor($Ascii(pHeader))
+	Set b = $Factor($$$MQTTDup)
+	Quit $BitLogic(a & b) = b
+]]></Implementation>
+</Method>
+
+<Method name="GetQoSLevel">
+<ClassMethod>1</ClassMethod>
+<FormalSpec>pHeader:%String</FormalSpec>
+<ReturnType>%Integer</ReturnType>
+<Implementation><![CDATA[
+	Set a  = $Factor($Ascii(pHeader))
+	Set q1 = $Factor($$$MQTTQoS1)
+	Set q2 = $Factor($$$MQTTQoS2)
+	Quit $Select($BitLogic(a & q2) = q2: 2, $BitLogic(a & q1) = q1: 1, 1: 0)
+]]></Implementation>
+</Method>
+
+<Method name="IsRetain">
+<ClassMethod>1</ClassMethod>
+<FormalSpec>pHeader:%String</FormalSpec>
+<ReturnType>%Boolean</ReturnType>
+<Implementation><![CDATA[
+	Set a = $Factor($Ascii(pHeader))
+	Set b = $Factor($$$MQTTRetain)
+	Quit $BitLogic(a & b) = b
+]]></Implementation>
+</Method>
+
+<Method name="GetUTFString">
+<FormalSpec>pString:%String</FormalSpec>
+<ReturnType>%String</ReturnType>
+<Implementation><![CDATA[
+	Set tString = $ZCVT(pString, "O", ..transTable)
+	Set tLen = $L(tString)
+	
+	Quit $$$MQTTEncodeNumber(tLen) _ tString
+]]></Implementation>
+</Method>
+</Class>
+</Export>

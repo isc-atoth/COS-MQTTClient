@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Export generator="Cache" version="25" zv="Cache for Windows (x86-64) 2016.2 (Build 665U)" ts="2016-08-08 23:03:44">
+<Class name="Net.MQTT.MessageHandler">
+<Abstract>1</Abstract>
+<TimeChanged>64138,59002.145789</TimeChanged>
+<TimeCreated>64131,56764.693636</TimeCreated>
+
+<Method name="OnMessage">
+<Description><![CDATA[
+Sample implementation of a message handler method, which is called by the <class>Net.MQTT.Agent</class> everytime, when it receives
+a new incoming message.
+
+The name of this class and method have to be set in the <property>OnMessage</property> property of the <class>Net.MQTT.Client</class> object.]]></Description>
+<ClassMethod>1</ClassMethod>
+<FormalSpec><![CDATA[&pMessage:Net.MQTT.Message,pDublicate:%Boolean]]></FormalSpec>
+<ReturnType>%Status</ReturnType>
+<Implementation><![CDATA[
+	Set msg				= ##class(Net.MQTT.MessageStore).%New()
+	Set msg.ClientId	= pMessage.ClientId
+	Set msg.Direction	= "I"
+	Set msg.MessageId	= pMessage.MessageId
+	Set msg.QoSLevel	= pMessage.QoSLevel
+	Set msg.Retain		= pMessage.Retain
+	Set msg.Topic		= pMessage.Topic
+	Set msg.Content		= pMessage.Content
+
+	Quit msg.%Save()
+]]></Implementation>
+</Method>
+</Class>
+</Export>

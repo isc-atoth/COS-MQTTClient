@@ -1,0 +1,65 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Export generator="Cache" version="25" zv="Cache for Windows (x86-64) 2016.2 (Build 665U)" ts="2016-08-08 23:03:44">
+<Class name="Net.MQTT.Auxiliary.SubscriptionTopic">
+<Description><![CDATA[
+Auxiliary class is used only internally by a <class>Net.MQTT.Client</class> and its <class>Net.MQTT.Agent</class>.
+<p>Provides the topic list, which the primary content of <b><var>SUBSCRIBE</var></b> and <b><var>UNSUBSCRIBE</var></b> messages.</p>]]></Description>
+<Super>%Persistent</Super>
+<TimeChanged>64138,82815.506576</TimeChanged>
+<TimeCreated>64050,80453.857656</TimeCreated>
+
+<Index name="TopicKey">
+<Properties>Subscription,Topic</Properties>
+<Unique>1</Unique>
+</Index>
+
+<Property name="Subscription">
+<Type>Net.MQTT.Auxiliary.Subscription</Type>
+<Cardinality>parent</Cardinality>
+<Inverse>Topics</Inverse>
+<Relationship>1</Relationship>
+</Property>
+
+<Property name="Topic">
+<Type>%String</Type>
+<Required>1</Required>
+<Parameter name="MAXLEN"/>
+</Property>
+
+<Property name="QoSLevel">
+<Type>%Integer</Type>
+<Required>1</Required>
+<Parameter name="VALUELIST" value=",0,1,2"/>
+</Property>
+
+<Property name="GrantedQoS">
+<Type>%Integer</Type>
+<Parameter name="VALUELIST" value=",0,1,2"/>
+</Property>
+
+<Storage name="Default">
+<Type>%Library.CacheStorage</Type>
+<DataLocation>{%%PARENT}("Topics")</DataLocation>
+<DefaultData>SubscriptionTopicDefaultData</DefaultData>
+<IdLocation>^Net.MQTT.Auxil93C.SubscriptionC("Topics")</IdLocation>
+<IndexLocation>^Net.MQTT.Au93C.Subscriptio1311I</IndexLocation>
+<StreamLocation>^Net.MQTT.Au93C.Subscriptio1311S</StreamLocation>
+<Data name="SubscriptionTopicDefaultData">
+<Structure>listnode</Structure>
+<Subscript/>
+<Value name="1">
+<Value>%%CLASSNAME</Value>
+</Value>
+<Value name="2">
+<Value>Topic</Value>
+</Value>
+<Value name="3">
+<Value>QoSLevel</Value>
+</Value>
+<Value name="4">
+<Value>GrantedQoS</Value>
+</Value>
+</Data>
+</Storage>
+</Class>
+</Export>

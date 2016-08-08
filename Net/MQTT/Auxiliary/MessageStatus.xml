@@ -1,0 +1,254 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Export generator="Cache" version="25" zv="Cache for Windows (x86-64) 2016.2 (Build 665U)" ts="2016-08-08 23:03:44">
+<Class name="Net.MQTT.Auxiliary.MessageStatus">
+<Description><![CDATA[
+Auxiliary class used only internally to keep track of QoS level 1-2 message, while they're waiting for completion of the communication.
+<class>This class is used only internally by the <class>Net.MQTT.Client</class> and <class>Net.MQTT.Agent</class> classes.
+<p>Messages are delete from this class, as soon as the corresponding message flow is completed.</p>]]></Description>
+<Super>%Persistent</Super>
+<TimeChanged>64138,82698.167565</TimeChanged>
+<TimeCreated>64050,79985.782311</TimeCreated>
+
+<Index name="ClientKey">
+<Properties>ClientId,Direction,MessageId</Properties>
+<Unique>1</Unique>
+</Index>
+
+<Property name="ClientId">
+<Type>%String</Type>
+<Required>1</Required>
+<Parameter name="MAXLEN" value="23"/>
+</Property>
+
+<Property name="Direction">
+<Type>%String</Type>
+<Required>1</Required>
+<Parameter name="VALUELIST" value=",I,O"/>
+</Property>
+
+<Property name="MessageId">
+<Type>%Integer</Type>
+<InitialExpression>0</InitialExpression>
+<Parameter name="MAXVAL" value="65535"/>
+<Parameter name="MINVAL" value="1"/>
+</Property>
+
+<Property name="Status">
+<Type>%String</Type>
+<Required>1</Required>
+<Parameter name="VALUELIST" value=",SUBSCRIBE,UNSUBSCRIBE,PUBLISH,PUBACK,PUBREC,PUBREL,PUBCOMP,DONE"/>
+</Property>
+
+<Method name="RegisterMessageIn">
+<ClassMethod>1</ClassMethod>
+<CodeMode>expression</CodeMode>
+<FormalSpec>pClientId:%String,pMessageId:%String,pQoSLevel:%Integer</FormalSpec>
+<ReturnType>%Status</ReturnType>
+<Implementation><![CDATA[..RegisterNew(pClientId, pMessageId, "I", $Case(pQoSLevel, 2: "PUBREC", : "PUBACK"))
+]]></Implementation>
+</Method>
+
+<Method name="IsRegisteredMessageIn">
+<ClassMethod>1</ClassMethod>
+<CodeMode>expression</CodeMode>
+<FormalSpec>pClientId:%String,pMessageId:%String</FormalSpec>
+<ReturnType>%Boolean</ReturnType>
+<Implementation><![CDATA[..ClientKeyExists(pClientId, "I", pMessageId)
+]]></Implementation>
+</Method>
+
+<Method name="ReleaseMessageIn">
+<ClassMethod>1</ClassMethod>
+<CodeMode>expression</CodeMode>
+<FormalSpec>pClientId:%String,pMessageId:%String</FormalSpec>
+<ReturnType>%Status</ReturnType>
+<Implementation><![CDATA[..Update(pClientId, "I", pMessageId, "PUBREL")
+]]></Implementation>
+</Method>
+
+<Method name="CompleteMessageIn">
+<ClassMethod>1</ClassMethod>
+<CodeMode>expression</CodeMode>
+<FormalSpec>pClientId:%String,pMessageId:%String</FormalSpec>
+<ReturnType>%Status</ReturnType>
+<Implementation><![CDATA[..Update(pClientId, "I", pMessageId, "PUBCOMP")
+]]></Implementation>
+</Method>
+
+<Method name="DoneMessageIn">
+<ClassMethod>1</ClassMethod>
+<CodeMode>expression</CodeMode>
+<FormalSpec>pClientId:%String,pMessageId:%String</FormalSpec>
+<ReturnType>%Status</ReturnType>
+<Implementation><![CDATA[..Done(pClientId, "I", pMessageId)
+]]></Implementation>
+</Method>
+
+<Method name="RegisterMessageOut">
+<ClassMethod>1</ClassMethod>
+<CodeMode>expression</CodeMode>
+<FormalSpec>pClientId:%String,pMessageId:%String</FormalSpec>
+<ReturnType>%Status</ReturnType>
+<Implementation><![CDATA[..RegisterNew(pClientId, pMessageId, "O", "PUBLISH")
+]]></Implementation>
+</Method>
+
+<Method name="AcknowledgeMessageOut">
+<ClassMethod>1</ClassMethod>
+<CodeMode>expression</CodeMode>
+<FormalSpec>pClientId:%String,pMessageId:%String</FormalSpec>
+<ReturnType>%Status</ReturnType>
+<Implementation><![CDATA[..Update(pClientId, "O", pMessageId, "PUBACK")
+]]></Implementation>
+</Method>
+
+<Method name="ReceiveMessageOut">
+<ClassMethod>1</ClassMethod>
+<CodeMode>expression</CodeMode>
+<FormalSpec>pClientId:%String,pMessageId:%String</FormalSpec>
+<ReturnType>%Status</ReturnType>
+<Implementation><![CDATA[..Update(pClientId, "O", pMessageId, "PUBREC")
+]]></Implementation>
+</Method>
+
+<Method name="ReleaseMessageOut">
+<ClassMethod>1</ClassMethod>
+<CodeMode>expression</CodeMode>
+<FormalSpec>pClientId:%String,pMessageId:%String</FormalSpec>
+<ReturnType>%Status</ReturnType>
+<Implementation><![CDATA[..Update(pClientId, "O", pMessageId, "PUBREL")
+]]></Implementation>
+</Method>
+
+<Method name="CompleteMessageOut">
+<ClassMethod>1</ClassMethod>
+<CodeMode>expression</CodeMode>
+<FormalSpec>pClientId:%String,pMessageId:%String</FormalSpec>
+<ReturnType>%Status</ReturnType>
+<Implementation><![CDATA[..Update(pClientId, "O", pMessageId, "PUBCOMP")
+]]></Implementation>
+</Method>
+
+<Method name="DoneMessageOut">
+<ClassMethod>1</ClassMethod>
+<CodeMode>expression</CodeMode>
+<FormalSpec>pClientId:%String,pMessageId:%String</FormalSpec>
+<ReturnType>%Status</ReturnType>
+<Implementation><![CDATA[..Done(pClientId, "O", pMessageId)
+]]></Implementation>
+</Method>
+
+<Method name="RegisterNew">
+<Internal>1</Internal>
+<ClassMethod>1</ClassMethod>
+<FormalSpec>pClientId:%String,pMessageId:%String,pDirection:%String,pStatus:%String</FormalSpec>
+<Private>1</Private>
+<ReturnType>%Status</ReturnType>
+<Implementation><![CDATA[
+	Set msgid = ""
+	Set tSC = ..%LockExtent(0)
+	If $$$ISERR(tSC) { Quit tSC }
+	
+	TRY {
+		Set obj = ..%New()
+		Set obj.ClientId = pClientId
+		Set obj.Direction = pDirection
+		Set obj.MessageId = pMessageId
+		Set obj.Status = pStatus
+		Set tSC = obj.%Save()
+	}
+	CATCH ex {
+		Set pSC = ex.AsStatus()
+	}
+	Do ..%UnlockExtent()
+	
+	Quit tSC
+]]></Implementation>
+</Method>
+
+<Method name="Update">
+<Internal>1</Internal>
+<ClassMethod>1</ClassMethod>
+<FormalSpec>pClientId:%String,pDirection:%String,pMessageId:%String,pStatus:%String</FormalSpec>
+<Private>1</Private>
+<ReturnType>%Status</ReturnType>
+<Implementation><![CDATA[
+	Set tSC = ..%LockExtent(0)
+	If $$$ISERR(tSC) { Quit tSC }
+
+	TRY {
+		Set obj = ..ClientKeyOpen(pClientId, pDirection, pMessageId, 0, .tSC)
+		If $$$ISOK(tSC) {
+			Set obj.Status = pStatus
+			Set tSC = obj.%Save()
+		}
+		Else {
+			Set tSC = $$$ERROR($$$GeneralError, "Message ID (" _ pDirection _ "," _ pMessageId _ ") cannot be updated for " _ pClientId)
+		}
+	}
+	CATCH ex {
+		Set tSC = ex.AsStatus()
+	}
+	Do ..%UnlockExtent()
+	
+	Quit tSC
+]]></Implementation>
+</Method>
+
+<Method name="Done">
+<Internal>1</Internal>
+<ClassMethod>1</ClassMethod>
+<FormalSpec>pClientId:%String,pDirection:%String,pMessageId:%String</FormalSpec>
+<Private>1</Private>
+<ReturnType>%Status</ReturnType>
+<Implementation><![CDATA[
+	Set tSC = ..%LockExtent(0)
+	If $$$ISERR(tSC) { Quit tSC }
+
+	TRY {
+		Set exists = ..ClientKeyExists(pClientId, pDirection, pMessageId, .id)
+		If exists {
+			Set tSC = ..%DeleteId(id, 0)
+		}
+		Else {
+			Set tSC = $$$ERROR($$$GeneralError, "Message ID (" _ pDirection _ "," _ pMessageId _ ") does not currently exists for " _ pClientId)
+		}
+	}
+	CATCH ex {
+		Set pSC = ex.AsStatus()
+	}
+	Do ..%UnlockExtent()
+	
+	Quit tSC
+]]></Implementation>
+</Method>
+
+<Storage name="Default">
+<Type>%Library.CacheStorage</Type>
+<DataLocation>^Net.MQTT.Auxi93C.MessageStatusD</DataLocation>
+<DefaultData>MessageStatusDefaultData</DefaultData>
+<IdLocation>^Net.MQTT.Auxi93C.MessageStatusD</IdLocation>
+<IndexLocation>^Net.MQTT.Auxi93C.MessageStatusI</IndexLocation>
+<StreamLocation>^Net.MQTT.Auxi93C.MessageStatusS</StreamLocation>
+<Data name="MessageStatusDefaultData">
+<Structure>listnode</Structure>
+<Subscript/>
+<Value name="1">
+<Value>%%CLASSNAME</Value>
+</Value>
+<Value name="2">
+<Value>ClientId</Value>
+</Value>
+<Value name="3">
+<Value>Direction</Value>
+</Value>
+<Value name="4">
+<Value>MessageId</Value>
+</Value>
+<Value name="5">
+<Value>Status</Value>
+</Value>
+</Data>
+</Storage>
+</Class>
+</Export>

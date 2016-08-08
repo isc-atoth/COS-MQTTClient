@@ -1,0 +1,110 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Export generator="Cache" version="25" zv="Cache for Windows (x86-64) 2016.2 (Build 665U)" ts="2016-08-08 23:03:44">
+<Class name="Net.MQTT.MessageStore">
+<Description><![CDATA[
+Sample message store for messages published by or recieved by <class>Net.MQTT.Client</class> and <class>Net.MQTT.Agent</class> instances.
+<p>This could be implemented different ways. For example: this implementation does not care about duplicate messages.</p>
+<p>In this sample MQTT Client implementation this class just stores all the incoming and outgoing messages unconditionally.</p>
+<p>For more documentation of message properties see: <class>Net.MQTT.Message</class>.</p>]]></Description>
+<Super>%Persistent</Super>
+<TimeChanged>64072,57252.367978</TimeChanged>
+<TimeCreated>64050,80453.857656</TimeCreated>
+
+<Index name="MsgIdx">
+<Properties>ClientId,Topic</Properties>
+</Index>
+
+<Property name="ClientId">
+<Type>%String</Type>
+<Required>1</Required>
+<Parameter name="MAXLEN" value="23"/>
+</Property>
+
+<Property name="Topic">
+<Type>%String</Type>
+<Required>1</Required>
+<Parameter name="MAXLEN"/>
+</Property>
+
+<Property name="Direction">
+<Description><![CDATA[
+Direction of the message: <b><var>I</var></b> is for <var>input</var> (subscribe), <b><var>O</var></b> is for <var>output</var> (publish). ]]></Description>
+<Type>%String</Type>
+<InitialExpression>"I"</InitialExpression>
+<Required>1</Required>
+<Parameter name="VALUELIST" value=",I,O"/>
+</Property>
+
+<Property name="MessageId">
+<Type>%Integer</Type>
+<Parameter name="MAXVAL" value="65653"/>
+<Parameter name="MINVAL" value="1"/>
+</Property>
+
+<Property name="Content">
+<Type>%String</Type>
+<Parameter name="MAXLEN"/>
+</Property>
+
+<Property name="QoSLevel">
+<Type>%Integer</Type>
+<Parameter name="VALUELIST" value=",0,1,2"/>
+</Property>
+
+<Property name="GrantedQoS">
+<Type>%Integer</Type>
+<Parameter name="VALUELIST" value=",0,1,2"/>
+</Property>
+
+<Property name="Retain">
+<Type>%Boolean</Type>
+</Property>
+
+<Property name="CreatedAt">
+<Type>%TimeStamp</Type>
+<InitialExpression>$ZDateTime($ZTimestamp, 3)</InitialExpression>
+<Required>1</Required>
+</Property>
+
+<Storage name="Default">
+<Type>%Library.CacheStorage</Type>
+<DataLocation>^Net.MQTT.MessageStoreD</DataLocation>
+<DefaultData>MessageStoreDefaultData</DefaultData>
+<IdLocation>^Net.MQTT.MessageStoreD</IdLocation>
+<IndexLocation>^Net.MQTT.MessageStoreI</IndexLocation>
+<StreamLocation>^Net.MQTT.MessageStoreS</StreamLocation>
+<Data name="MessageStoreDefaultData">
+<Value name="1">
+<Value>%%CLASSNAME</Value>
+</Value>
+<Value name="2">
+<Value>ClientId</Value>
+</Value>
+<Value name="3">
+<Value>Topic</Value>
+</Value>
+<Value name="4">
+<Value>MessageId</Value>
+</Value>
+<Value name="5">
+<Value>Content</Value>
+</Value>
+<Value name="6">
+<Value>QoSLevel</Value>
+</Value>
+<Value name="7">
+<Value>GrantedQoS</Value>
+</Value>
+<Value name="8">
+<Value>Retain</Value>
+</Value>
+<Value name="9">
+<Value>CreatedAt</Value>
+</Value>
+<Value name="10">
+<Value>Direction</Value>
+</Value>
+</Data>
+</Storage>
+</Class>
+</Export>

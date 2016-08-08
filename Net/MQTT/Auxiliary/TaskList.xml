@@ -1,0 +1,232 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Export generator="Cache" version="25" zv="Cache for Windows (x86-64) 2016.2 (Build 665U)" ts="2016-08-08 23:03:44">
+<Class name="Net.MQTT.Auxiliary.TaskList">
+<Description><![CDATA[
+Auxiliary class is used only internally, which proides an event-drivn interface for a <class>Net.MQTT.Client</class> and its <class>Net.MQTT.Agent</class>.]]></Description>
+<Super>%Persistent</Super>
+<TimeChanged>64138,82875.607597</TimeChanged>
+<TimeCreated>64051,66904.675697</TimeCreated>
+
+<Property name="ConnectionId">
+<Description><![CDATA[
+<property>connectionId</property> property of the corresponding <class>Net.MQTT.Client</class> and <class>Net.MQTT.Agent</class> objects.]]></Description>
+<Type>%String</Type>
+<Required>1</Required>
+</Property>
+
+<Property name="ContextId">
+<Description>
+Task-dependent context identifier. The cretor and processor of the task must agree on the meaning of this string. </Description>
+<Type>%String</Type>
+<Required>1</Required>
+<Parameter name="MAXLEN"/>
+</Property>
+
+<Property name="Action">
+<Description>
+List of actions, which require an event-driven interface.</Description>
+<Type>%String</Type>
+<Required>1</Required>
+<Parameter name="VALUELIST" value=",DISCONNECT,SUBSCRIBE,UNSUBSCRIBE,PUBLISH,PUBACK,PUBREC,PUBREL,PUBCOMP"/>
+</Property>
+
+<Property name="Status">
+<Description><![CDATA[
+Current status of the task:<ul>
+<li><b><var>0</var></b> - <b><var>Pending</var></b>, waiting for being processed.</li>
+<li><b><var>1</var></b> - <b><var>In progress</var></b>, the <class>Net.MQTT.Agent</class> already picked up the task.</li>
+<li><b><var>2</var></b> - <b><var>Done</var></b>, and kept for debugging purposes.</li>
+</ul>]]></Description>
+<Type>%Integer</Type>
+<InitialExpression>0</InitialExpression>
+<Required>1</Required>
+<Parameter name="MAXVAL" value="2"/>
+<Parameter name="MINVAL" value="0"/>
+</Property>
+
+<Method name="WaitAck">
+<Description><![CDATA[
+Called when a particular message (identified by <var>pMessageId</var>) of a client connection is waiting for an event.
+<p>The <class>%SYSTEM.Event</class> API is used to implement this, for detailed explanation of the return value, see that class documentation!</p>]]></Description>
+<ClassMethod>1</ClassMethod>
+<FormalSpec>pConnectionId:%String,pMessageId:%String,pStatus:%String,pTimeout:%Integer=-1</FormalSpec>
+<ReturnType>%List</ReturnType>
+<Implementation><![CDATA[
+	Set ret = ""
+	Do $System.Event.Create("^MQTT.Message(""" _ pConnectionId _ """,""" _ pMessageId _ """,""" _ pStatus _ """)")
+	Set ret = $System.Event.WaitMsg("^MQTT.Message(""" _ pConnectionId _ """,""" _ pMessageId _ """,""" _ pStatus _ """)", pTimeout)
+	
+	Quit ret
+]]></Implementation>
+</Method>
+
+<Method name="SignalAck">
+<Description><![CDATA[
+Called to trigger an event of a particular message (identified by <var>pMessageId</var>) of a client connection.
+<p>The <class>%SYSTEM.Event</class> API is used to implement this, for detailed explanation of the return value, see that class documentation!</p>]]></Description>
+<ClassMethod>1</ClassMethod>
+<FormalSpec>pConnectionId:%String,pMessageId:%String,pStatus:%String,pContent:%String=""</FormalSpec>
+<ReturnType>%Integer</ReturnType>
+<Implementation><![CDATA[
+	Do $System.Event.Create("^MQTT.Message(""" _ pConnectionId _ """,""" _ pMessageId _ """,""" _ pStatus _ """)")
+	Quit $System.Event.Signal("^MQTT.Message(""" _ pConnectionId _ """,""" _ pMessageId _ """,""" _ pStatus _ """)", pContent)
+]]></Implementation>
+</Method>
+
+<Method name="WaitTask">
+<Description><![CDATA[
+Creates a task and waits until it will be completed.
+<p>The <class>%SYSTEM.Event</class> API is used to implement this, for detailed explanation of the return value, see that class documentation!</p>]]></Description>
+<ClassMethod>1</ClassMethod>
+<FormalSpec><![CDATA[pConnectionId:%String,pContextId:%String,pAction:%String,pTimeout:%Integer=-1,&pSC:%Status]]></FormalSpec>
+<ReturnType>%List</ReturnType>
+<Implementation><![CDATA[
+	Set ret = ""
+	Set taskId = ..CreateNewTask(pConnectionId, pContextId, pAction, .pSC)
+	If $$$ISOK(pSC) {
+		Do $System.Event.Create("^MQTT.Task(""" _ pConnectionId _ """,""" _ taskId _ """)")
+		Set ret = $System.Event.WaitMsg("^MQTT.Task(""" _ pConnectionId _ """,""" _taskId _ """)", pTimeout)
+	}
+	
+	Quit ret
+]]></Implementation>
+</Method>
+
+<Method name="SignalTask">
+<Description><![CDATA[
+Signals the completion of a task.
+<p><var>pStatusCode</p> is the return status of the method, which processed the task.</p>
+<p><var>pDebugMode</p> shows, whether the <class>Net.MQTT.Auxiliary.TaskList</class> object has to be kept for debugging purposes,
+ or can be deleted.</p>]]></Description>
+<ClassMethod>1</ClassMethod>
+<FormalSpec>pConnectionId:%String,pTaskId:%String,pStatusCode:%Status,pDebugMode:%Boolean=0</FormalSpec>
+<ReturnType>%Status</ReturnType>
+<Implementation><![CDATA[
+	Do $System.Event.Signal("^MQTT.Task(""" _ pConnectionId _ """,""" _ pTaskId _ """)", $Select($$$ISOK(pStatusCode): "", 1: $System.Status.GetErrorText(pStatusCode)))
+	Set tSC = ..CompleteTask(pTaskId, pDebugMode)
+	
+	Quit tSC
+]]></Implementation>
+</Method>
+
+<Method name="CreateNewTask">
+<ClassMethod>1</ClassMethod>
+<FormalSpec><![CDATA[pConnectionId:%String,pContextId:%String,pAction:%String,&pSC:%Status]]></FormalSpec>
+<ReturnType>%String</ReturnType>
+<Implementation><![CDATA[
+	Set obj = ..%New()
+	Set obj.ConnectionId = pConnectionId
+	Set obj.ContextId = pContextId
+	Set obj.Action = pAction
+	Set pSC = obj.%Save()
+	Quit $Select($$$ISOK(pSC): obj.%Id(), 1: "")
+]]></Implementation>
+</Method>
+
+<Method name="AcquireNext">
+<ClassMethod>1</ClassMethod>
+<FormalSpec>pConnectionId:%String,*pTaskId:%String,*pContextId:%String,*pAction:%String</FormalSpec>
+<ReturnType>%Status</ReturnType>
+<Implementation><![CDATA[
+	Set tSC = $$$OK
+	Set (pTaskId, pContextId, pAction) = ""
+	Lock +^Net.MQTT.Auxiliary.TaskListD:5 Quit:('$Test) $$$ERROR($$$GeneralError, "Task table lock failed")
+	TRY {
+		&sql(SELECT TOP 1 
+			ID, ContextId, Action 
+		INTO 
+			:pTaskId, :pContextId, :pAction
+		FROM
+			Net_MQTT_Auxiliary.TaskList
+		WHERE
+			ConnectionId = :pConnectionId AND Status = 0
+		)
+		If $Get(SQLCODE, 0) {
+			If (SQLCODE '= 100) {
+				Set tSC = $$$ERROR($$$GeneralError, "Task table query failed (" _ SQLCODE _ ")")
+			}
+		}
+		Else {
+			Set tSC = ..AcquireTask(pTaskId)
+		}
+	}
+	CATCH ex {
+		Set tSC = ex.AsStatus()
+	}
+	Lock -^Net.MQTT.Auxiliary.TaskListD
+	
+	Quit tSC
+]]></Implementation>
+</Method>
+
+<Method name="AcquireTask">
+<ClassMethod>1</ClassMethod>
+<FormalSpec>pTaskId:%String</FormalSpec>
+<ReturnType>%Status</ReturnType>
+<Implementation><![CDATA[
+	Set obj = ..%OpenId(pTaskId, 4)
+	If $IsObject(obj) {
+		Set obj.Status = 1
+		Set tSC = obj.%Save()
+	}
+	Else {
+		Set tSC = $$$ERROR($$$GeneralError, "Task cannot be found (id = " _ pTaskId _ ")")
+	}
+	
+	Quit tSC
+]]></Implementation>
+</Method>
+
+<Method name="CompleteTask">
+<ClassMethod>1</ClassMethod>
+<FormalSpec>pTaskId:%String,pKeepIt:%Boolean=0</FormalSpec>
+<ReturnType>%Status</ReturnType>
+<Implementation><![CDATA[
+	Set tSC = $$$OK, found = 0
+	If pKeepIt {
+		Set obj = ..%OpenId(pTaskId, 4)
+		If $IsObject(obj) {
+			Set found = 1
+			Set obj.Status = 2
+			Set tSC = obj.%Save()
+		}
+	}
+	Else {
+		Set found = $$$ISOK(..%DeleteId(pTaskId, 4))
+	}
+
+	If 'found {
+		Set tSC = $$$ERROR($$$GeneralError, "Task cannot be found (id = " _ pTaskId _ ")")
+	}
+	
+	Quit tSC
+]]></Implementation>
+</Method>
+
+<Storage name="Default">
+<Type>%Library.CacheStorage</Type>
+<DataLocation>^Net.MQTT.Auxiliary.TaskListD</DataLocation>
+<DefaultData>TaskListDefaultData</DefaultData>
+<IdLocation>^Net.MQTT.Auxiliary.TaskListD</IdLocation>
+<IndexLocation>^Net.MQTT.Auxiliary.TaskListI</IndexLocation>
+<StreamLocation>^Net.MQTT.Auxiliary.TaskListS</StreamLocation>
+<Data name="TaskListDefaultData">
+<Value name="1">
+<Value>%%CLASSNAME</Value>
+</Value>
+<Value name="2">
+<Value>ConnectionId</Value>
+</Value>
+<Value name="3">
+<Value>ContextId</Value>
+</Value>
+<Value name="4">
+<Value>Action</Value>
+</Value>
+<Value name="5">
+<Value>Status</Value>
+</Value>
+</Data>
+</Storage>
+</Class>
+</Export>

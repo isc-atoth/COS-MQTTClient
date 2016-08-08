@@ -1,0 +1,628 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Export generator="Cache" version="25" zv="Cache for Windows (x86-64) 2016.2 (Build 665U)" ts="2016-08-08 23:03:44">
+<Class name="Net.MQTT.Client">
+<Description><![CDATA[
+The main class and public API for the <i>Caché Object Script</i> MQTT Client sample implementation (version: 0.9).
+
+<p>For more information regarding the MQTT protocol visit the <a href="http://mqtt.org">MQTT Org.</a> website,
+ or examine the <a href="http://docs.oasis-open.org/mqtt/mqtt/v3.1.1/os/mqtt-v3.1.1-os.html">OASIS</a> standard specification.</p>
+
+<p>Fully functional to demonstrate all kind of MQTT Client activities, but not a fully-featured client.</p>
+
+<p>There are a few known (and maybe some unknown) limitations:<ul>
+<li>It's not prepared for SSL / TLS communication.</li>
+<li>TCP/IP based only, cannot be used with web-socket based MQTT Brokers.</li>
+<li>Communication of the <class>Net.MQTT.Client</class> and background <class>Net.MQTT.Agent</class> instances is limited to the
+ tasks to be done / completed. This could be enriched with for example status information of the Agent, which would make
+ it easier to monitor the background job from the Client interface and check its health status in certain scenarios.</li>
+<li>Incoming and outgoing messages are simply logged into the <class>Net.MQTT.MessageStore</class> class. No any checks for
+ duplicate messages are done (when an incoming message is repeated by the Broker, due to a lost acknowledge).</li>
+<li>For incoming QoS Level 2 messages no retry mechanism is implemented: if no <b><var>PUBREL</b></var> message would arrive
+ for the <b><var>PUBREC</b></var> acknowledge, the Agent will simply wait for it endless and the message remains in the 
+ <class>Net.MQTT.Auxiliary.MessageStatus</class>, registered with a <var>waiting for PUBREL</var> status.</li>
+</ul></p>
+<p>Questions, bug reports, recommendations are highly welcome to my <a href="mailto:Attila.Toth@InterSystems.com">Inbox</a>.</p>]]></Description>
+<IncludeCode>MQTTOptions</IncludeCode>
+<Super>%RegisteredObject,%XML.Adaptor</Super>
+<TimeChanged>64138,83004.606669</TimeChanged>
+<TimeCreated>64041,57924.914604</TimeCreated>
+
+<Property name="Host">
+<Description>
+Host name of the MQTT Broker.</Description>
+<Type>%String</Type>
+<InitialExpression>"localhost"</InitialExpression>
+</Property>
+
+<Property name="Port">
+<Description>
+Port number of the MQTT Broker.</Description>
+<Type>%String</Type>
+<InitialExpression>1883</InitialExpression>
+</Property>
+
+<Property name="SSLConfig">
+<Description>
+SSL/TLS Configuration to be used to build a secured TCP Connection to the MQTT Broker.</Description>
+<Type>%String</Type>
+</Property>
+
+<Property name="ConnectTimeout">
+<Description>
+Timeout (in seconds) of building the TCP Connection to the MQTT Broker.</Description>
+<Type>%Integer</Type>
+<InitialExpression>10</InitialExpression>
+</Property>
+
+<Property name="ReadTimeout">
+<Description><![CDATA[
+Generic default timeout for all kinds of action when either an incoming TCP communication is expected,
+ or the Client interface has to wait for the <class>Net.MQTT.Agent</class> to complete a task.]]></Description>
+<Type>%Integer</Type>
+<InitialExpression>10</InitialExpression>
+</Property>
+
+<Property name="KeepAliveInterval">
+<Description><![CDATA[
+The MQTT Broker may close the connection to the Client, if no requests are received within this interval (in seconds).
+<p>It's the responsibility of the <class>Net.MQTT.Agent</class> to send a PING request at least in each intervals.</p>]]></Description>
+<Type>%Integer</Type>
+<InitialExpression>60</InitialExpression>
+</Property>
+
+<Property name="ClientId">
+<Description><![CDATA[
+Identifies the Client at the MQTT Broker.
+<p>This implementation is restricted multiple places to use unique Client IDs among the co-existing <class>Net.MQTT.Client</class>
+ instances within the same database. This restriction is acceptable, as the MQTT Brokers may reject multiple TCP connections 
+ with the same Client ID.</p>]]></Description>
+<Type>%String</Type>
+<Parameter name="MAXLEN" value="23"/>
+</Property>
+
+<Property name="CleanSession">
+<Description><![CDATA[
+Sent with the <b><var>CONNECT</b></var> message to the MQTT Broker.
+<p>For details see the MQTT standard specification.</p>]]></Description>
+<Type>%Boolean</Type>
+<InitialExpression>1</InitialExpression>
+</Property>
+
+<Property name="LastWill">
+<Description>
+This object contains details of the "Last will and testament" of this Client - the message to be sent to subscribed Clients
+ from the MQTT Broker in case, when the Broker's connection to this Client would be closed / lost.</Description>
+<Type>Net.MQTT.Message</Type>
+</Property>
+
+<Property name="Retry">
+<Description><![CDATA[
+Some QoS Level 1 and 2 messages (<b><var>PUBLISH</b></var>, <b><var>PUBREL</b></var>, <b><var>SUBSCRIBE</b></var>, <b><var>UNSUBSCIBE</b></var>)
+ might be re-sent by the Client if no appropriate acknowledge can be received from the MQTT Broker within the specified timout intervals.
+<br/>This property controls the maximum number of repeated attempts.]]></Description>
+<Type>%Integer</Type>
+<InitialExpression>2</InitialExpression>
+</Property>
+
+<Property name="RetryInterval">
+<Description><![CDATA[
+Some QoS Level 1 and 2 messages (<b><var>PUBLISH</b></var>, <b><var>PUBREL</b></var>, <b><var>SUBSCRIBE</b></var>, <b><var>UNSUBSCIBE</b></var>)
+ might be re-sent by the Client if no appropriate acknowledge can be received from the MQTT Broker within the specified timout intervals.
+<br/>This property controls the wait interval (in seconds) within each repeated attempts.]]></Description>
+<Type>%Integer</Type>
+<InitialExpression>2</InitialExpression>
+</Property>
+
+<Property name="OnMessage">
+<Description><![CDATA[
+User-defined method, which is called whenever the <class>Net.MQTT.Agent</class> receives an incoming message.
+<p>The required format of the <property>OnMessage</property> property is: <var>Classname:MethodName</var>. 
+A sample implementation is provided in the <class>Net.MQTT.MessageHandler</class>.</p>
+
+<p>If this property is empty, doesn't contain a valid classname/method name or the message handler method throws a runtime error,
+that event is logged in the <property>traceTarget</property> (if it's set).</p>]]></Description>
+<Type>%String</Type>
+<InitialExpression>"Net.MQTT.MessageHandler:OnMessage"</InitialExpression>
+</Property>
+
+<Property name="traceTarget">
+<Description>
+For debugging purposes this property can be set to any global variable names (e.g.: ^MQTT.Trace), 
+ in which case detailed trace information is logged into the specified global about the actions taken and also
+ the incoming and outgoing TCP communication.</Description>
+<Type>%String</Type>
+</Property>
+
+<Property name="trace">
+<Type>%Boolean</Type>
+<Calculated>1</Calculated>
+</Property>
+
+<Method name="traceGet">
+<CodeMode>expression</CodeMode>
+<ReturnType>%Boolean</ReturnType>
+<Implementation><![CDATA[..traceTarget '= ""
+]]></Implementation>
+</Method>
+
+<Property name="debugMode">
+<Description><![CDATA[
+For debugging purposes this property can be set to 1, in which case some originally temporary information is not deleted from
+ auxiliary tables (for example: <class>Net.MQTT.Auxiliary.TaskList</class>). ]]></Description>
+<Type>%Integer</Type>
+<InitialExpression>0</InitialExpression>
+</Property>
+
+<Property name="connectionId">
+<Description><![CDATA[
+This property is a unique identifier of the <class>Net.MQTT.Client</class> and the related <class>Net.MQTT.Agent</class> instance,
+ and it is used in event-driven communication of the foreground Client and the background Agent processes.
+<p>This is meant to be set automatically by the Client, do not set it directly!</p>]]></Description>
+<Type>%String</Type>
+<InitialExpression>$System.Util.CreateGUID()</InitialExpression>
+</Property>
+
+<Property name="agent">
+<Description><![CDATA[
+Do not manipulate this property, which should always contain the JOB id of the corresponding <class>Net.MQTT.Agent</class>.]]></Description>
+<Type>%String</Type>
+</Property>
+
+<Method name="StartAgent">
+<Description><![CDATA[
+This is the first method to be called, in order to communicate with an MQTT Broker.
+<p>Starts a <class>Net.MQTT.Agent</class> instance, which is responsible for building the TCP connection and 
+ managing the communication with the broker.</p>]]></Description>
+<FormalSpec>pUsername:%String="",pPassword:%String=""</FormalSpec>
+<ReturnType>%Status</ReturnType>
+<Implementation><![CDATA[
+	Set tSC = $$$OK
+	If ..agent '= "" {
+		Set tSC = $$$ERROR($$$GeneralError, "MQTT Agent to <" _ ..Host _ ":" _ ..Port _ "> has already been started")
+	}
+	Else {
+		Set tSC = ##class(Net.MQTT.Auxiliary.MessageCounter).CreateCounter(..ClientId)
+		Set:$$$ISOK(tSC) tSC = ..XMLExportToString(.data, "root")
+		If $$$ISOK(tSC) {
+			Do $System.Event.Create("^MQTT.Connect(""" _ ..connectionId _ """)")
+			JOB ##class(Net.MQTT.Agent).StartListening(data, pUsername, pPassword)
+			Set ..agent = $ZChild
+			Set ret = $System.Event.WaitMsg("^MQTT.Connect(""" _ ..connectionId _ """)", (..ConnectTimeout * 1.5))
+			If $ListGet(ret, 1) < 1 {
+				Set tSC = $$$ERROR($$$GeneralError, "MQTT Agent has not connected within the timeout period")
+			}
+			ElseIf $ListGet(ret, 2) '= "" {
+				Set tSC = $$$ERROR($$$GeneralError, $ListGet(ret, 2))
+			}
+			
+			If $$$ISERR(tSC) {
+				Do ..KillAgent()
+			}
+		}
+	}
+	Quit tSC
+]]></Implementation>
+</Method>
+
+<Method name="StopAgent">
+<Description><![CDATA[
+Stops the Agent by sending <b><var>DISCONNECT</var></b> message and closing the TCP connection to the MQTT Broker.
+<p>If this method completes successfully, the <class>Net.MQTT.Client</class> instance is re-usable and 
+ its <method>StartAgent</method> method can be called again.</p>]]></Description>
+<ReturnType>%Status</ReturnType>
+<Implementation><![CDATA[
+	Set tSC = $$$OK
+	If ..agent '= "" {
+		Set ret = ##class(Net.MQTT.Auxiliary.TaskList).WaitTask(..connectionId, ..connectionId, "DISCONNECT", ..ConnectTimeout * 1.5, .tSC)
+		If $$$ISOK(tSC) {
+			If $ListGet(ret, 1) < 1 {
+				Set tSC = $$$ERROR($$$GeneralError, "MQTT Agent has not disconnected within the timeout period")
+			}
+			ElseIf $ListGet(ret, 2) '= "" {
+				Set tSC = $$$ERROR($$$GeneralError, $ListGet(ret, 2))
+			}
+		}
+		
+		Set tSC = $System.Status.AppendStatus(tSC, ..KillAgent())
+	}
+	
+	Quit tSC
+]]></Implementation>
+</Method>
+
+<Method name="KillAgent">
+<Description><![CDATA[
+Normally this meant to be used only internally by the <method>StopAgent</method> method.
+<p>In some rare cases, when the Agent cannot be stopped normally (by sending a <b><var>DISCONNECT</var></b> message),
+ this can still be used to terminate the Agent's background job and perform important maintenance steps.</p>]]></Description>
+<ReturnType>%Status</ReturnType>
+<Implementation><![CDATA[
+	Set tSC = $$$OK
+	If ..agent '= "" {
+		Set ret = ##class(%SYSTEM.Process).Terminate(..agent, 0)
+		If ret '= 1 {
+			Set tSC = $$$ERROR($$$GeneralError, "MQTT Agent cannot be stopped in a clean way (status = " _ ret _ ")")
+		}
+		Set ..agent = ""
+	}
+	Set:$$$ISOK(tSC) tSC = ##class(Net.MQTT.Auxiliary.MessageCounter).DropCounter(..ClientId)
+
+	// Re-initialize connection id for subsequent start of the Agent
+	Set ..connectionId = $System.Util.CreateGUID()
+
+	Quit tSC
+]]></Implementation>
+</Method>
+
+<Method name="Subscribe">
+<Description><![CDATA[
+Sends a request to the MQTT Broker to subsribe this client for a list of topics and controls the message flow:
+<blockquote>
+ Sends the <b><var>SUBSCRIBE</var></b> message and if no <b><var>SUBACK</var></b> has been received in the timeout period,
+  it can retry the <b><var>SUBSCRIBE</var></b> according to the <property>Retry</property> and <property>RetryInterval</property> settings,
+  before giving up and returning with an error.
+</blockquote>
+<blockquote>
+ If the acknowledge is received, the <property>GrantedQoS</property> of each elements in the <var>pTopics</var> list should contain
+  the QoS Level assured by the MQTT broker for the corresponding topic. 
+</blockquote>
+<p>Usage example:</p>
+<example>
+Set tpc = ##class(Net.MQTT.Message).%New()
+Set tpc.Topic = "$SYS/broker/load/bytes/#"
+Set tpc.QoSLevel = 2
+Set topics = ##class(%ListOfObjects).%New()
+Do topics.Insert(tpc)
+ 
+Set client = ##class(Net.MQTT.Client).%New()
+Set client.Host = "test.mosquitto.org"
+Set client.ClientId = "My1stMQTTClient"
+Set client.traceTarget = "^MQTT.Trace"
+Set sc = client.StartAgent() If ('sc) { Do $System.OBJ.DisplayError(sc) }
+Set sc = client.Subscribe(.topics) If ('sc) { Do $System.OBJ.DisplayError(sc) }
+If (''sc) { Set t=topics.GetAt(1) Write "Topic:'"_t.Topic_"'; Expected QoS:"_t.QoSLevel_"; Granted QoS:"_t.GrantedQoS_";", ! }
+; wait a few seconds to receive some messages from the broker 
+Set sc = client.Unsubscribe(.topics) If ('sc) { Do $System.OBJ.DisplayError(sc) }
+Set sc = client.StopAgent() If ('sc) { Do $System.OBJ.DisplayError(sc) }
+ZWrite ^MQTT.Trace
+</example>]]></Description>
+<FormalSpec><![CDATA[&pTopics:%ListOfObjects(ELEMENTTYPE="Net.MQTT.Message")]]></FormalSpec>
+<ReturnType>%Status</ReturnType>
+<Implementation><![CDATA[
+#dim sub As Net.MQTT.Auxiliary.Subscription
+	If ..agent = "" {
+		Quit $$$ERROR($$$GeneralError, "MQTT Agent to <" _ ..Host _ ":" _ ..Port _ "> has not been started yet")
+	}
+	If '$IsObject(pTopics) || (pTopics.Count() < 1) {
+		Quit $$$ERROR($$$GeneralError, "At least one topic must be specified to subscribe for")
+	}
+	
+	Set msgId = ##class(Net.MQTT.Auxiliary.MessageCounter).NextMessageId(..ClientId, .tSC)
+	If $$$ISERR(tSC) {
+		$$$MQTTTraceERR($System.Status.GetErrorText(tSC))
+		Quit $$$ERROR($$$GeneralError, "Message ID for SUBSCRIBE message cannot be created")
+	}
+	
+	TStart
+	TRY {
+		Set key = "", cnt = 0
+		Set sub = ##class(Net.MQTT.Auxiliary.Subscription).CreateSubscription(..ClientId, msgId, .tSC)
+		While $$$ISOK(tSC) {
+			Set topic = pTopics.GetNext(.key) Quit:(key = "")
+			Set tSC = sub.AddTopic(topic)
+		}
+	}
+	CATCH ex {
+		Set tSC = ex.AsStatus()
+	}
+	If $$$ISOK(tSC) { TCommit }
+	Else { TRollback }
+	
+	Set retry = ..Retry, retcnt = 0, success = 0
+	While $$$ISOK(tSC) && (success '= 1) {
+		Set ret = ##class(Net.MQTT.Auxiliary.TaskList).WaitTask(..connectionId, msgId _ $Select(retcnt: ":" _ retcnt, 1: ""), "SUBSCRIBE", ..ReadTimeout, .tSC)
+		If $$$ISOK(tSC) {
+			If $ListGet(ret, 1) < 1 {
+				Set tSC = $$$ERROR($$$GeneralError, "MQTT Agent has not succeeded within the timeout period (" _ $ListGet(ret, 1) _ ")")
+			}
+			ElseIf $ListGet(ret, 2) '= "" {
+				Set tSC = $$$ERROR($$$GeneralError, $ListGet(ret, 2))
+			}
+			Else {
+				Set ack = ##class(Net.MQTT.Auxiliary.TaskList).WaitAck(..connectionId, msgId, "SUBACK", ..ReadTimeout)
+				Set success  = $ListGet(ack, 1)
+				If (success = 0) && (retry > 0) {
+					$$$MQTTTraceERR("MQTT Agent has not received acknowledge within the timeout period (remaining reties: " _ retry _ ")")
+					Hang ..RetryInterval
+					Set retry = retry - 1, retcnt = retcnt + 1
+				}
+				ElseIf success < 1 {
+					Set tSC = $$$ERROR($$$GeneralError, "MQTT Agent has not received acknowledge within the timeout period (" _ success _ ")")
+				}
+				ElseIf $ListGet(ack, 2) '= "" {
+					Set tSC = $$$ERROR($$$GeneralError, $ListGet(ack, 2))
+				}
+				Else {
+					Set tSC = sub.RetrieveAck(.pTopics)
+				}
+			}
+		}
+	}
+	
+	If $IsObject(sub) {
+		Set subid = sub.%Id(), sub = ""
+		Set tSC = $System.Status.AppendStatus(tSC, ##class(Net.MQTT.Auxiliary.Subscription).DropSubscription(subid))
+	}
+	
+	Quit tSC
+]]></Implementation>
+</Method>
+
+<Method name="Unsubscribe">
+<Description><![CDATA[
+Sends a request to the MQTT Broker to unsubsribe this client from a list of topics and controls the message flow:
+<blockquote>
+ Sends the <b><var>UNSUBSCRIBE</var></b> message and if no <b><var>UNSUBACK</var></b> has been received in the timeout period,
+  it can retry the <b><var>UNSUBSCRIBE</var></b> according to the <property>Retry</property> and <property>RetryInterval</property> settings,
+  before giving up and returning with an error.
+</blockquote>
+<p>For usage example see the <method>Subscribe</method> method.</p>]]></Description>
+<FormalSpec><![CDATA[&pTopics:%ListOfObjects(ELEMENTTYPE="Net.MQTT.Message")]]></FormalSpec>
+<ReturnType>%Status</ReturnType>
+<Implementation><![CDATA[
+#dim sub As Net.MQTT.Auxiliary.Subscription
+	If ..agent = "" {
+		Quit $$$ERROR($$$GeneralError, "MQTT Agent to <" _ ..Host _ ":" _ ..Port _ "> has not been started yet")
+	}
+	If '$IsObject(pTopics) || (pTopics.Count() < 1) {
+		Quit $$$ERROR($$$GeneralError, "At least one topic must be specified to unsubscribe from")
+	}
+	
+	Set msgId = ##class(Net.MQTT.Auxiliary.MessageCounter).NextMessageId(..ClientId, .tSC)
+	If $$$ISERR(tSC) {
+		$$$MQTTTraceERR($System.Status.GetErrorText(tSC))
+		Quit $$$ERROR($$$GeneralError, "Message ID for UNSUBSCRIBE message cannot be created")
+	}
+	
+	TStart
+	TRY {
+		Set key = "", cnt = 0
+		Set sub = ##class(Net.MQTT.Auxiliary.Subscription).CreateSubscription(..ClientId, msgId, .tSC)
+		While $$$ISOK(tSC) {
+			Set topic = pTopics.GetNext(.key) Quit:(key = "")
+			Set tSC = sub.AddTopic(topic)
+		}
+	}
+	CATCH ex {
+		Set tSC = ex.AsStatus()
+	}
+	If $$$ISOK(tSC) { TCommit }
+	Else { TRollback }
+	
+	Set retry = ..Retry, retcnt = 0, success = 0
+	While $$$ISOK(tSC) && (success '= 1) {
+		Set ret = ##class(Net.MQTT.Auxiliary.TaskList).WaitTask(..connectionId, msgId _ $Select(retcnt: ":" _ retcnt, 1: ""), "UNSUBSCRIBE", ..ReadTimeout, .tSC)
+		If $$$ISOK(tSC) {
+			If $ListGet(ret, 1) < 1 {
+				Set tSC = $$$ERROR($$$GeneralError, "MQTT Agent has not succeeded within the timeout period (" _ $ListGet(ret, 1) _ ")")
+			}
+			ElseIf $ListGet(ret, 2) '= "" {
+				Set tSC = $$$ERROR($$$GeneralError, $ListGet(ret, 2))
+			}
+			Else {
+				Set ack = ##class(Net.MQTT.Auxiliary.TaskList).WaitAck(..connectionId, msgId, "UNSUBACK", ..ReadTimeout)
+				Set success  = $ListGet(ack, 1)
+				If (success = 0) && (retry > 0) {
+					$$$MQTTTraceERR("MQTT Agent has not received acknowledge within the timeout period (remaining reties: " _ retry _ ")")
+					Hang ..RetryInterval
+					Set retry = retry - 1, retcnt = retcnt + 1
+				}
+				If success < 1 {
+					Set tSC = $$$ERROR($$$GeneralError, "MQTT Agent has not received acknowledge within the timeout period (" _ success _ ")")
+				}
+				ElseIf $ListGet(ack, 2) '= "" {
+					Set tSC = $$$ERROR($$$GeneralError, $ListGet(ack, 2))
+				}
+			}
+		}
+	}
+	
+	If $IsObject(sub) {
+		Set subid = sub.%Id(), sub = ""
+		Set tSC = $System.Status.AppendStatus(tSC, ##class(Net.MQTT.Auxiliary.Subscription).DropSubscription(subid))
+	}
+
+	Quit tSC
+]]></Implementation>
+</Method>
+
+<Method name="Publish">
+<Description><![CDATA[
+Publishes a message to the MQTT Broker and (on QoS Level > 0) controls the message flow.
+<p>In case of QoS = 1</p>
+<blockquote>
+ Sends the <b><var>PUBLISH</var></b> message and if no <b><var>PUBACK</var></b> has been received in the timeout period,
+  it can retry the <b><var>PUBLISH</var></b> according to the <property>Retry</property> and <property>RetryInterval</property> settings,
+  before giving up and returning with an error.
+</blockquote>
+<p>In case of QoS = 2</p>
+<blockquote>
+ Sends the <b><var>PUBLISH</var></b> message and if no <b><var>PUBREC</var></b> has been received in the timeout period,
+  it can retry the <b><var>PUBLISH</var></b> according to the <property>Retry</property> and <property>RetryInterval</property> settings,
+  before giving up and returning with an error.
+</blockquote>
+<blockquote>
+ After the <b><var>PUBREC</var></b> message has been received, it sends the <b><var>PUBREL</var></b> message 
+  and if no <b><var>PUBCOMP</var></b> has been received in the timeout period,
+  it can retry the <b><var>PUBREL</var></b> according to the <property>Retry</property> and <property>RetryInterval</property> settings,
+  before giving up and returning with an error.
+</blockquote>
+<p>Usage example:</p>
+<example>
+Set message = ##class(Net.MQTT.Message).%New()
+Set message.Topic = "/isctest/client/sent"
+Set message.Content = 1
+Set message.QoSLevel = 2
+ 
+Set client = ##class(Net.MQTT.Client).%New()
+Set client.Host = "test.mosquitto.org"
+Set client.ClientId = "My1stMQTTClient"
+Set client.traceTarget = "^MQTT.Trace"
+Set sc = client.StartAgent() If ('sc) { Do $System.OBJ.DisplayError(sc) }
+Set sc = client.Publish(message) If ('sc) { Do $System.OBJ.DisplayError(sc) }
+Set sc = client.StopAgent() If ('sc) { Do $System.OBJ.DisplayError(sc) }
+ZWrite ^MQTT.Trace
+</example>]]></Description>
+<FormalSpec>pMessage:Net.MQTT.Message</FormalSpec>
+<ReturnType>%Status</ReturnType>
+<Implementation><![CDATA[
+	If ..agent = "" {
+		Quit $$$ERROR($$$GeneralError, "MQTT Agent to <" _ ..Host _ ":" _ ..Port _ "> has not been started yet")
+	}
+	If '$IsObject(pMessage) {
+		Quit $$$ERROR($$$GeneralError, "A message must be specified to publish")
+	}
+	
+	Set tSC = $$$OK
+	If pMessage.QoSLevel > 0 {
+		Set pMessage.MessageId = ##class(Net.MQTT.Auxiliary.MessageCounter).NextMessageId(..ClientId, .tSC)
+		Set:$$$ISOK(tSC) tSC = ##class(Net.MQTT.Auxiliary.MessageStatus).RegisterMessageOut(..ClientId, pMessage.MessageId)
+	}
+	If $$$ISERR(tSC) {
+		$$$MQTTTraceERR($System.Status.GetErrorText(tSC))
+		Quit $$$ERROR($$$GeneralError, "Message ID for PUBLISH message cannot be created")
+	}
+	
+	Set msg				= ##class(Net.MQTT.MessageStore).%New()
+	Set msg.ClientId	= ..ClientId
+	Set msg.Direction	= "O"
+	Set msg.MessageId	= pMessage.MessageId
+	Set msg.QoSLevel	= pMessage.QoSLevel
+	Set msg.Retain		= pMessage.Retain
+	Set msg.Topic		= pMessage.Topic
+	Set msg.Content		= pMessage.Content
+	Set tSC = msg.%Save()
+	
+	Set retry = ..Retry, retcnt = 0, success = 0
+	Set acktype = $Case(pMessage.QoSLevel, 2: "PUBREC", 1: "PUBACK", : "")
+	While $$$ISOK(tSC) && (success '= 1) {
+		Set ret = ##class(Net.MQTT.Auxiliary.TaskList).WaitTask(..connectionId, msg.%Id() _ $Select(retcnt: ":" _ retcnt, 1: ""), "PUBLISH", ..ReadTimeout, .tSC)
+		If $$$ISOK(tSC) {
+			If $ListGet(ret, 1) < 1 {
+				Set tSC = $$$ERROR($$$GeneralError, "MQTT Agent has not succeeded within the timeout period (" _ $ListGet(ret, 1) _ ")")
+			}
+			ElseIf $ListGet(ret, 2) '= "" {
+				Set tSC = $$$ERROR($$$GeneralError, $ListGet(ret, 2))
+			}
+			ElseIf pMessage.QoSLevel = 0 {
+				Set success = 1
+			}
+			ElseIf pMessage.QoSLevel > 0 {
+				Set ack = ##class(Net.MQTT.Auxiliary.TaskList).WaitAck(..connectionId, pMessage.MessageId, acktype, ..ReadTimeout)
+				Set success  = $ListGet(ack, 1)
+				If (success = 0) && (retry > 0) {
+					$$$MQTTTraceERR("MQTT Agent has not received acknowledge within the timeout period (remaining reties: " _ retry _ ")")
+					Hang ..RetryInterval
+					Set retry = retry - 1, retcnt = retcnt + 1
+				}
+				If success < 1 {
+					Set tSC = $$$ERROR($$$GeneralError, "MQTT Agent has not received acknowledge within the timeout period (" _ success _ ")")
+				}
+				ElseIf $ListGet(ack, 2) '= "" {
+					Set tSC = $$$ERROR($$$GeneralError, $ListGet(ack, 2))
+				}
+				ElseIf pMessage.QoSLevel = 2 {
+					Set tSC = ..PublishQoS2(pMessage.MessageId)
+				}
+			}
+		}
+	}
+	
+	Quit tSC
+]]></Implementation>
+</Method>
+
+<Method name="PublishQoS2">
+<Description><![CDATA[
+Internal method, used by <method>Publish</method> to manage the second pahse of QoS Level 2 message flow
+(<b><var>PUBREL</var></b> message is sent and <b><var>PUBCOMP</var></b> is expected).]]></Description>
+<Internal>1</Internal>
+<FormalSpec>pMessageId:%String</FormalSpec>
+<Private>1</Private>
+<ReturnType>%Status</ReturnType>
+<Implementation><![CDATA[
+	Set tSC = $$$OK
+	
+	Set retry = ..Retry, retcnt = 0, success = 0
+	While $$$ISOK(tSC) && (success '= 1) {
+		Set ret = ##class(Net.MQTT.Auxiliary.TaskList).WaitTask(..connectionId, pMessageId _ $Select(retcnt: ":" _ retcnt, 1: ""), "PUBREL", ..ReadTimeout, .tSC)
+		If $$$ISOK(tSC) {
+			If $ListGet(ret, 1) < 1 {
+				Set tSC = $$$ERROR($$$GeneralError, "MQTT Agent has not sent QoS=2 acknowledge within the timeout period (" _ $ListGet(ret, 1) _ ")")
+			}
+			ElseIf $ListGet(ret, 2) '= "" {
+				Set tSC = $$$ERROR($$$GeneralError, $ListGet(ret, 2))
+			}
+			Else {
+				Set ack = ##class(Net.MQTT.Auxiliary.TaskList).WaitAck(..connectionId, pMessageId, "PUBCOMP", ..ReadTimeout)
+				Set success  = $ListGet(ack, 1)
+				If (success = 0) && (retry > 0) {
+					$$$MQTTTraceERR("MQTT Agent has not received QOS=2 acknowledge within the timeout period (remaining reties: " _ retry _ ")")
+					Hang ..RetryInterval
+					Set retry = retry - 1, retcnt = retcnt + 1
+				}
+				If success < 1 {
+					Set tSC = $$$ERROR($$$GeneralError, "MQTT Agent has not received QOS=2 acknowledge within the timeout period (" _ success _ ")")
+				}
+				ElseIf $ListGet(ack, 2) '= "" {
+					Set tSC = $$$ERROR($$$GeneralError, $ListGet(ack, 2))
+				}
+			}
+		}
+	}
+	
+	Quit tSC
+]]></Implementation>
+</Method>
+
+<Method name="GetProtocolName">
+<CodeMode>expression</CodeMode>
+<ReturnType>%String</ReturnType>
+<Implementation><![CDATA[..GetUTFString("MQIsdp")
+]]></Implementation>
+</Method>
+
+<Method name="GetProtocolVersion">
+<CodeMode>expression</CodeMode>
+<ReturnType>%String</ReturnType>
+<Implementation><![CDATA[$Char(3)
+]]></Implementation>
+</Method>
+
+<Method name="GetUTFString">
+<FormalSpec>pString:%String</FormalSpec>
+<ReturnType>%String</ReturnType>
+<Implementation><![CDATA[	Quit ""
+]]></Implementation>
+</Method>
+
+<Method name="ResetClient">
+<Description><![CDATA[
+For maintenance purposes only! <b>USE WITH CARE!</b>
+<p>If one of the message flows would break with unexpected error, the <class>Net.MQTT.Client</class> may leave
+ records behind in some auxiliary classes which can prevent the same <property>ClientId</property> to be used in a subsequent
+ execution of a <class>Net.MQTT.Client</class> instance.</p>
+<p>This auxiliary method is responsible for clearing those records when needed.</p>
+<p><b>WARNING:</b> if this is called while a <class>Net.MQTT.Agent</class> with the same Client ID is still active,
+ this may cause errors in the Agent, too. And stopping the Agent in a clear way (with sending a <b><var>DISCONNECT</var></b> message)
+ won't be possible any more. Use <method>KillAgent</method> in this case!</p>]]></Description>
+<ClassMethod>1</ClassMethod>
+<FormalSpec>pClientId:%String</FormalSpec>
+<Implementation><![CDATA[
+	Do ##class(Net.MQTT.Auxiliary.MessageCounter).%DeleteId(pClientId)
+	&sql(DELETE FROM Net_MQTT_Auxiliary.Subscription WHERE ClientId = :pClientId)
+	&sql(DELETE FROM Net_MQTT_Auxiliary.MessageStatus WHERE ClientId = :pClientId)
+]]></Implementation>
+</Method>
+</Class>
+</Export>

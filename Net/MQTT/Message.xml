@@ -1,0 +1,61 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Export generator="Cache" version="25" zv="Cache for Windows (x86-64) 2016.2 (Build 665U)" ts="2016-08-08 23:03:44">
+<Class name="Net.MQTT.Message">
+<Description><![CDATA[
+This structure is used as the input / output parameter type of multiple <class>Net.MQTT.Client</clas> methods.]]></Description>
+<Super>%RegisteredObject,%XML.Adaptor</Super>
+<TimeChanged>64131,57977.885311</TimeChanged>
+<TimeCreated>64043,42166.491302</TimeCreated>
+
+<Property name="ClientId">
+<Description><![CDATA[
+In certain sitatuations the ClientId of the <class>Net.MQTT.Client</class> and <class>Net.MQTT.Agent</class> objects 
+is also recorded in the Message object. Usually this property remains empty though. ]]></Description>
+<Type>%String</Type>
+<Parameter name="MAXLEN" value="23"/>
+</Property>
+
+<Property name="MessageId">
+<Description>
+Message Identifier. Usually it doesn't have to be set, when used as an input parameter. </Description>
+<Type>%Integer</Type>
+<Parameter name="MAXVAL" value="65535"/>
+<Parameter name="MINVAL" value="1"/>
+</Property>
+
+<Property name="Topic">
+<Type>%String</Type>
+</Property>
+
+<Property name="Content">
+<Type>%String</Type>
+<Parameter name="MAXLEN"/>
+</Property>
+
+<Property name="QoSLevel">
+<Description><![CDATA[
+Quality of service, expected / provided by the client.<ul>
+<li><b><var>0</var></b> - no guaranteed message delivery.</li>
+<li><b><var>1</var></b> - at least once delivery (simple acknowledge).</li>
+<li><b><var>2</var></b> - exactly once delivery (two level acknowledges).</li>
+</ul>]]></Description>
+<Type>%Integer</Type>
+<Parameter name="VALUELIST" value=",0,1,2"/>
+</Property>
+
+<Property name="GrantedQoS">
+<Description><![CDATA[
+In case of subscriptions, this is the quality of service, provided by the server (may differ from the one expected by the client).
+<br/>For details see <property>QoSLevel</property>]]></Description>
+<Type>%Integer</Type>
+<Parameter name="VALUELIST" value=",0,1,2"/>
+</Property>
+
+<Property name="Retain">
+<Description>
+In some message flows (publish, subscribe) may show, whether the server is expected to keep the message,
+ even after the client disconnects.</Description>
+<Type>%Boolean</Type>
+</Property>
+</Class>
+</Export>

@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<Export generator="Cache" version="25" zv="Cache for Windows (x86-64) 2016.2 (Build 665U)" ts="2016-08-08 23:03:44">
+<Export generator="Cache" version="25" zv="Cache for Windows (x86-64) 2016.1.2 (Build 206U)" ts="2016-09-01 14:51:39">
 <Class name="Net.MQTT.Agent">
 <Description><![CDATA[
 The MQTT Agent is always started by a <class>Net.MQTT.Client</class> in the background to manage the real communication with the broker.
@@ -11,7 +11,7 @@ The MQTT Agent is always started by a <class>Net.MQTT.Client</class> in the back
 <li>Listening for incoming messages from the broker and triggering appropriate actions based on the message type.</li>
 </ul></p>]]></Description>
 <Super>Net.MQTT.Client</Super>
-<TimeChanged>64138,82953.716476</TimeChanged>
+<TimeChanged>64152,49723.657073</TimeChanged>
 <TimeCreated>64051,64922.792357</TimeCreated>
 
 <Property name="connected">
@@ -42,8 +42,25 @@ The MQTT Agent is always started by a <class>Net.MQTT.Client</class> in the back
 </Property>
 
 <Property name="fatalError">
-<Type>%Boolean</Type>
+<Description><![CDATA[
+If connection error is assumed, an automatic re-connect attempt is done by the Agent.
+In that period this property is set to <var>-1</var>.
+<p>If automatic re-connect is not possible, <property>fatalError</property> is set to <var>1</var>,
+and the Agent stops itself.</p>]]></Description>
+<Type>%Integer</Type>
 <InitialExpression>0</InitialExpression>
+<Parameter name="MAXVAL" value="1"/>
+<Parameter name="MINVAL" value="-1"/>
+</Property>
+
+<Property name="username">
+<Type>%String</Type>
+<Transient>1</Transient>
+</Property>
+
+<Property name="password">
+<Type>%String</Type>
+<Transient>1</Transient>
 </Property>
 
 <Method name="StartListening">
@@ -60,7 +77,10 @@ This method is called directly (as a background job) by the <class>Net.MQTT.Clie
 	Do reader.Correlate("root", ..%ClassName(1))
 	Set tSC = reader.OpenString(pInitialState)
 	If $$$ISOK(tSC) && reader.Next(.agent) {
-		Set tSC = agent.DoCONNECT(pUsername, pPassword)
+		// It's necessary to strore username and password in memory for automatic reconnect feature
+		Set agent.username = pUsername
+		Set agent.password = pPassword
+		Set tSC = agent.DoCONNECT(agent.username, agent.password)
 		If $$$ISOK(tSC) {
 			Do agent.Listen()
 		}
@@ -97,7 +117,7 @@ The main function of the Agent. Unless a fatal error happens, it runs in an endl
 	$$$MQTTTraceINF("Agent for " _ ..ClientId _ " to <" _ ..Host _ ":" _ ..Port _ "> starts listening")
 	Do SetIO^%NLS("RAW")
 	While 1 {
-		If ..fatalError {
+		If ..fatalError > 0 {
 			Quit
 		}
 		
@@ -105,9 +125,14 @@ The main function of the Agent. Unless a fatal error happens, it runs in an endl
 			Set tSC = ##class(Net.MQTT.Auxiliary.TaskList).AcquireNext(..connectionId, .taskId, .contextId, .action)
 			If $$$ISOK(tSC) {
 				If taskId '= "" {
-					$$$MQTTTraceINF("Agent for " _ ..ClientId _ " to <" _ ..Host _ ":" _ ..Port _ "> processes task (" _taskId _ ")")
+					If $$$MQTTTraceDebug {
+						$$$MQTTTraceDEB("Agent for " _ ..ClientId _ " to <" _ ..Host _ ":" _ ..Port _ "> processes task (" _taskId _ ")")
+					}
+					Else {
+						$$$MQTTTraceINF("Agent for " _ ..ClientId _ " to <" _ ..Host _ ":" _ ..Port _ "> processes '" _ action _ "' action")
+					}
 					Set tSC = $METHOD($this, "Do" _ action, taskId, contextId)
-					Set tSC = ##class(Net.MQTT.Auxiliary.TaskList).SignalTask(..connectionId, taskId, tSC, (''..debugMode))
+					Set tSC = ##class(Net.MQTT.Auxiliary.TaskList).SignalTask(..connectionId, taskId, tSC, $$$MQTTTraceDebug)
 				}
 				ElseIf (..lastPing '= "") && ($System.SQL.DATEDIFF("s", ..lastPing, $ZDateTime($ZTimeStamp, 3, 1)) > ..KeepAliveInterval) {
 					$$$MQTTTraceERR("PINGRESP message has not arrived from <" _ ..Host _ ":" _ ..Port _ "> within the timeout interval")
@@ -153,7 +178,7 @@ Listens for incoming messages.
  TRY {	
 	Read header#1:0 Set timeout = ('$Test)
 	If 'timeout {
-		$$$MQTTTraceIN("Header", header)
+		$$$MQTTTraceIN("Header", header, $$$MQTTTraceDebug)
 		Set type	= ..GetMessageType(header)
 		Set typeT	= $$$MQTTMsgType(type)
 		Set dup		= ..IsDuplicate(header)
@@ -175,7 +200,7 @@ Listens for incoming messages.
 		}
 		
 		Set content = ""
-		$$$MQTTTraceIN("Length", rl)
+		$$$MQTTTraceIN("Length", rl, $$$MQTTTraceDebug)
 		If $$$ISOK(tSC) && (length > 0) {
 			Read content#length:..ReadTimeout Set timeout = ('$Test)
 			If timeout || ($Length(content) '= length) {
@@ -183,15 +208,24 @@ Listens for incoming messages.
 			}
 		}
 		If $$$ISOK(tSC) {
-			$$$MQTTTraceIN(typeT, header _ rl _ content)
+			$$$MQTTTraceIN(typeT, header _ rl _ content, $$$MQTTTraceInfo)
 		}
 		Set tSC = $METHOD($this, "Recv" _ typeT, dup, qos, retain, content)
 	}
  }
  CATCH ex {
 	If ex.%IsA("%Exception.SystemException") && (ex.Name = "<READ>") {
-		$$$MQTTTraceERR("MQTT broker probably closed TCP connection to <" _ ..Host _ ":" _ ..Port _ "> (READ error)")
-		Set ..fatalError = 1
+		$$$MQTTTraceWRN("MQTT broker probably closed TCP connection to <" _ ..Host _ ":" _ ..Port _ "> (READ error)")
+		// Try reconnect
+		Set sc = $$$OK
+		If ('..fatalError) {
+			Set ..fatalError = -1
+			Set sc = ..DoCONNECT(..username, ..password)
+		}
+		If $$$ISERR(sc) {
+			$$$MQTTTraceERR("Agent couldn't re-connect automatically to <" _ ..Host _ ":" _ ..Port _ ">")
+			Set ..fatalError = 1
+		}
 	}
 	Set tSC = ex.AsStatus() 
  } 
@@ -837,7 +871,7 @@ Evaluates a <b><var>PUBLISH</var></b> message, received from the MQTT Broker and
 	CATCH ex {
 		Set tSC = ex.AsStatus()
 	}
-	Do ##class(Net.MQTT.Auxiliaryiliary.MessageStatus).%UnlockExtent()
+	Do ##class(Net.MQTT.Auxiliary.MessageStatus).%UnlockExtent()
 	If $$$ISOK(tSC) { TCommit }
 	Else { TRollback }
 	Quit:$$$ISERR(tSC) tSC
@@ -872,7 +906,7 @@ Evaluates the <property>OnMessage</property> setting, calls the appropriate call
 	}
 	
 	If $$$ISERR(tSC) {
-		$$$MQTTTraceERR("Message cannot be processed (ID='" _ pMsgId _ "', Content='" + pContent + "'): " + $System.Status.GetErrorText(tSC))
+		$$$MQTTTraceERR("Message cannot be processed (ID='" _ pMsgId _ "', Content='" + pContent + "'): " _ $System.Status.GetErrorText(tSC))
 	}
 ]]></Implementation>
 </Method>
@@ -916,7 +950,7 @@ Evaluates the <property>OnMessage</property> setting, calls the appropriate call
 	Set msg = header_pMessage
 	Write msg, !
 	Set ..lastMessage = $ZDateTime($ZTimeStamp, 3, 1)
-	$$$MQTTTraceOUT($$$MQTTMsgType(pMessageType), msg) 
+	$$$MQTTTraceOUT($$$MQTTMsgType(pMessageType), msg, $$$MQTTTraceInfo) 
 	
 	Quit $$$OK
 ]]></Implementation>
@@ -981,5 +1015,34 @@ Evaluates the <property>OnMessage</property> setting, calls the appropriate call
 	Quit $$$MQTTEncodeNumber(tLen) _ tString
 ]]></Implementation>
 </Method>
+
+<Storage name="Default">
+<Type>%Library.CacheStorage</Type>
+<DefaultData>AgentDefaultData</DefaultData>
+<Data name="AgentDefaultData">
+<Subscript>"Agent"</Subscript>
+<Value name="1">
+<Value>connected</Value>
+</Value>
+<Value name="2">
+<Value>device</Value>
+</Value>
+<Value name="3">
+<Value>saveIODev</Value>
+</Value>
+<Value name="4">
+<Value>transTable</Value>
+</Value>
+<Value name="5">
+<Value>lastMessage</Value>
+</Value>
+<Value name="6">
+<Value>lastPing</Value>
+</Value>
+<Value name="7">
+<Value>fatalError</Value>
+</Value>
+</Data>
+</Storage>
 </Class>
 </Export>

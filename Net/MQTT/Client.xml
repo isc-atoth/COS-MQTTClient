@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<Export generator="Cache" version="25" zv="Cache for Windows (x86-64) 2016.2 (Build 665U)" ts="2016-08-08 23:03:44">
+<Export generator="Cache" version="25" zv="Cache for Windows (x86-64) 2016.1.2 (Build 206U)" ts="2016-09-01 14:51:39">
 <Class name="Net.MQTT.Client">
 <Description><![CDATA[
 The main class and public API for the <i>Caché Object Script</i> MQTT Client sample implementation (version: 0.9).
@@ -23,8 +23,8 @@ The main class and public API for the <i>Caché Object Script</i> MQTT Client sa
 </ul></p>
 <p>Questions, bug reports, recommendations are highly welcome to my <a href="mailto:Attila.Toth@InterSystems.com">Inbox</a>.</p>]]></Description>
 <IncludeCode>MQTTOptions</IncludeCode>
-<Super>%RegisteredObject,%XML.Adaptor</Super>
-<TimeChanged>64138,83004.606669</TimeChanged>
+<Super>%Persistent,%XML.Adaptor</Super>
+<TimeChanged>64152,50908.223153</TimeChanged>
 <TimeCreated>64041,57924.914604</TimeCreated>
 
 <Property name="Host">
@@ -145,8 +145,25 @@ For debugging purposes this property can be set to any global variable names (e.
 ]]></Implementation>
 </Method>
 
+<Property name="traceLevel">
+<Description><![CDATA[
+The following settings are available to influence the content to be traced in the <property>traceTarget</property>:<ul>
+<li><var>0</var> - no trace information</li>
+<li><var>1</var> - errors only</li>
+<li><var>2</var> - errors and warnings</li>
+<li><var>3</var> - beyond errors and warnings, information about the actions made by the MQTT Client and Agent</li>
+<li><var>4</var> - in this case even some originally temporary information is not deleted from auxiliary tables (e.g.: <class>Net.MQTT.Auxiliary.TaskList</li>
+</ul> ]]></Description>
+<Type>%Integer</Type>
+<InitialExpression>3</InitialExpression>
+<Required>1</Required>
+<Parameter name="DISPLAYLIST" value=",notrace,error,warning,info,debug"/>
+<Parameter name="VALUELIST" value=",0,1,2,3,4"/>
+</Property>
+
 <Property name="debugMode">
 <Description><![CDATA[
+<b>*** DEPRECATED ***:</b> Use <property>traceLevel</property> instead.
 For debugging purposes this property can be set to 1, in which case some originally temporary information is not deleted from
  auxiliary tables (for example: <class>Net.MQTT.Auxiliary.TaskList</class>). ]]></Description>
 <Type>%Integer</Type>
@@ -245,7 +262,7 @@ Normally this meant to be used only internally by the <method>StopAgent</method>
 		}
 		Set ..agent = ""
 	}
-	Set:$$$ISOK(tSC) tSC = ##class(Net.MQTT.Auxiliary.MessageCounter).DropCounter(..ClientId)
+	Set tSC = $System.Status.AppendStatus(tSC, ##class(Net.MQTT.Auxiliary.MessageCounter).DropCounter(..ClientId))
 
 	// Re-initialize connection id for subsequent start of the Agent
 	Set ..connectionId = $System.Util.CreateGUID()
@@ -624,5 +641,70 @@ For maintenance purposes only! <b>USE WITH CARE!</b>
 	&sql(DELETE FROM Net_MQTT_Auxiliary.MessageStatus WHERE ClientId = :pClientId)
 ]]></Implementation>
 </Method>
+
+<Storage name="Default">
+<Type>%Library.CacheStorage</Type>
+<DataLocation>^Net.MQTT.ClientD</DataLocation>
+<DefaultData>ClientDefaultData</DefaultData>
+<IdLocation>^Net.MQTT.ClientD</IdLocation>
+<IndexLocation>^Net.MQTT.ClientI</IndexLocation>
+<StreamLocation>^Net.MQTT.ClientS</StreamLocation>
+<Data name="ClientDefaultData">
+<Value name="1">
+<Value>%%CLASSNAME</Value>
+</Value>
+<Value name="2">
+<Value>Host</Value>
+</Value>
+<Value name="3">
+<Value>Port</Value>
+</Value>
+<Value name="4">
+<Value>SSLConfig</Value>
+</Value>
+<Value name="5">
+<Value>ConnectTimeout</Value>
+</Value>
+<Value name="6">
+<Value>ReadTimeout</Value>
+</Value>
+<Value name="7">
+<Value>KeepAliveInterval</Value>
+</Value>
+<Value name="8">
+<Value>ClientId</Value>
+</Value>
+<Value name="9">
+<Value>CleanSession</Value>
+</Value>
+<Value name="10">
+<Value>LastWill</Value>
+</Value>
+<Value name="11">
+<Value>Retry</Value>
+</Value>
+<Value name="12">
+<Value>RetryInterval</Value>
+</Value>
+<Value name="13">
+<Value>OnMessage</Value>
+</Value>
+<Value name="14">
+<Value>traceTarget</Value>
+</Value>
+<Value name="15">
+<Value>debugMode</Value>
+</Value>
+<Value name="16">
+<Value>connectionId</Value>
+</Value>
+<Value name="17">
+<Value>agent</Value>
+</Value>
+<Value name="18">
+<Value>traceLevel</Value>
+</Value>
+</Data>
+</Storage>
 </Class>
 </Export>

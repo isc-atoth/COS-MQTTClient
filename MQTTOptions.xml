@@ -1,14 +1,22 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<Export generator="Cache" version="25" zv="Cache for Windows (x86-64) 2016.2 (Build 665U)" ts="2016-08-08 23:09:52">
-<Routine name="MQTTOptions" type="INC" timestamp="64072,50236.541129"><![CDATA[
 #; General
-#define MQTTTraceIN(%type,%msg)		$$$MQTTTrace(%type,"I",%msg)
-#define MQTTTraceOUT(%type,%msg)	$$$MQTTTrace(%type,"O",%msg)
-#define MQTTTraceINF(%msg)			$$$MQTTTrace("INFO","S",%msg)
-#define MQTTTraceERR(%msg)			$$$MQTTTrace("ERROR","S",%msg)
-#define MQTTTrace(%type,%dir,%msg)	Set:(..trace) var=..traceTarget,@var@($I(@var),$ZDT($ZU(188),3,1,3),%dir,$Case(%type,"":"UNKNOWN",:%type))=%msg
 #define MQTTEncodeNumber(%num)		$Reverse($ZWChar(%num))
 #define MQTTDecodeNumber(%str)		$ZWAscii($Reverse(%str))
+
+#define MQTTNoTrace					(..traceLevel = 0)
+#define MQTTTraceErrors				(..traceLevel > 0)
+#define MQTTTraceWarnings			(..traceLevel > 1)
+#define MQTTTraceInfo				(..traceLevel > 2)
+#define MQTTTraceDebug				(..traceLevel > 3)
+
+#define MQTTTrace(%type,%dir,%msg)				Set:(..trace) var=..traceTarget,@var@($I(@var),$ZDT($ZU(188),3,1,3),%dir,$Case(%type,"":"UNKNOWN",:%type))=%msg
+#define MQTTTraceCond(%type,%dir,%msg,%cond)	Set:(..trace && (%cond)) var=..traceTarget,@var@($I(@var),$ZDT($ZU(188),3,1,3),%dir,$Case(%type,"":"UNKNOWN",:%type))=%msg
+#define MQTTTraceIN(%type,%msg,%level)			$$$MQTTTraceCond(%type,"I",%msg,%level)
+#define MQTTTraceOUT(%type,%msg,%level)			$$$MQTTTraceCond(%type,"O",%msg,%level)
+#define MQTTTraceWRN(%msg)						$$$MQTTTraceCond("WARNING","S",%msg,$$$MQTTTraceWarnings)
+#define MQTTTraceERR(%msg)						$$$MQTTTraceCond("ERROR","S",%msg,$$$MQTTTraceErrors)
+#define MQTTTraceINF(%msg)						$$$MQTTTraceCond("INFO","S",%msg,$$$MQTTTraceInfo)
+#define MQTTTraceDEB(%msg)						$$$MQTTTraceCond("DEBUG","S",%msg,$$$MQTTTraceDebug)
 
 #; Fixed header
 #define MQTTRetain			1

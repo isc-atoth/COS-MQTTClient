@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<Export generator="Cache" version="25" zv="Cache for Windows (x86-64) 2016.2 (Build 665U)" ts="2016-08-08 23:03:44">
+<Export generator="Cache" version="25" zv="Cache for Windows (x86-64) 2016.1.2 (Build 206U)" ts="2016-09-01 14:51:39">
 <Class name="Net.MQTT.Auxiliary.TaskList">
 <Description><![CDATA[
 Auxiliary class is used only internally, which proides an event-drivn interface for a <class>Net.MQTT.Client</class> and its <class>Net.MQTT.Agent</class>.]]></Description>

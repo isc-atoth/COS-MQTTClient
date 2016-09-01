@@ -1,11 +1,11 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<Export generator="Cache" version="25" zv="Cache for Windows (x86-64) 2016.2 (Build 665U)" ts="2016-08-08 23:03:44">
+<Export generator="Cache" version="25" zv="Cache for Windows (x86-64) 2016.1.2 (Build 206U)" ts="2016-09-01 14:51:39">
 <Class name="Net.MQTT.Auxiliary.SubscriptionTopic">
 <Description><![CDATA[
 Auxiliary class is used only internally by a <class>Net.MQTT.Client</class> and its <class>Net.MQTT.Agent</class>.
 <p>Provides the topic list, which the primary content of <b><var>SUBSCRIBE</var></b> and <b><var>UNSUBSCRIBE</var></b> messages.</p>]]></Description>
 <Super>%Persistent</Super>
-<TimeChanged>64138,82815.506576</TimeChanged>
+<TimeChanged>64152,52574.606659</TimeChanged>
 <TimeCreated>64050,80453.857656</TimeCreated>
 
 <Index name="TopicKey">
@@ -28,7 +28,7 @@ Auxiliary class is used only internally by a <class>Net.MQTT.Client</class> and 
 
 <Property name="QoSLevel">
 <Type>%Integer</Type>
-<Required>1</Required>
+<InitialExpression>0</InitialExpression>
 <Parameter name="VALUELIST" value=",0,1,2"/>
 </Property>
 
@@ -45,8 +45,6 @@ Auxiliary class is used only internally by a <class>Net.MQTT.Client</class> and 
 <IndexLocation>^Net.MQTT.Au93C.Subscriptio1311I</IndexLocation>
 <StreamLocation>^Net.MQTT.Au93C.Subscriptio1311S</StreamLocation>
 <Data name="SubscriptionTopicDefaultData">
-<Structure>listnode</Structure>
-<Subscript/>
 <Value name="1">
 <Value>%%CLASSNAME</Value>
 </Value>

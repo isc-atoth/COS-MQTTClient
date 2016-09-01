@@ -29,3 +29,7 @@ There are a few known (and maybe some unknown) limitations:
 Version history
 - 0.9: Initial version
 - 0.92: Adding SSL support and OnMessage callback
+- 0.95: 
+  * Adding trace levels to better control the traced content.
+  * Net.MQTT.Client is now persistent. This is useful, when- for example- a REST interface is built on the top of the MQTT client.
+  * Agent automatically tries to re-connect (once only), if the TCP connection to the broker seems to be broken.

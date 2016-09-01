@@ -1,8 +1,11 @@
 <?xml version="1.0" encoding="UTF-8"?>
+<Export generator="Cache" version="25" zv="Cache for Windows (x86-64) 2016.1.2 (Build 206U)" ts="2016-09-01 14:58:19">
+<Routine name="MQTTOptions" type="INC" timestamp="64162,53820.637419"><![CDATA[
 #; General
 #define MQTTEncodeNumber(%num)		$Reverse($ZWChar(%num))
 #define MQTTDecodeNumber(%str)		$ZWAscii($Reverse(%str))
 
+#; Trace level conditions
 #define MQTTNoTrace					(..traceLevel = 0)
 #define MQTTTraceErrors				(..traceLevel > 0)
 #define MQTTTraceWarnings			(..traceLevel > 1)
